@@ -44,7 +44,7 @@ When suggesting features:
 
 1. **Fork and Clone**
    ```bash
-   git clone https://github.com/your-username/BlenderCivil.git
+   git clone https://github.com/DesertSpringsCivil/BlenderCivil.git
    cd BlenderCivil
    ```
 

@@ -13,14 +13,14 @@ Designed to integrate seamlessly with Bonsai (formerly BlenderBIM) and IfcOpenSh
 
 bl_info = {
     "name": "BlenderCivil",
-    "author": "OASYS Contributors",
+    "author": "Desert Springs Civil Engineering",
     "version": (0, 1, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Civil",
     "description": "Civil engineering and infrastructure design tools",
     "warning": "Alpha version - expect changes",
-    "doc_url": "https://github.com/your-username/BlenderCivil",
-    "tracker_url": "https://github.com/your-username/BlenderCivil/issues",
+    "doc_url": "https://github.com/DesertSpringsCivil/BlenderCivil",
+    "tracker_url": "https://github.com/DesertSpringsCivil/BlenderCivil/issues",
     "category": "Scene",
 }
 

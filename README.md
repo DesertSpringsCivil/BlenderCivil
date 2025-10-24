@@ -33,7 +33,7 @@ BlenderCivil is a comprehensive addon that brings professional civil engineering
 
 ### Method 1: Blender Extensions (Recommended for Blender 4.2+)
 
-1. Download the latest release from [Releases](https://github.com/your-username/BlenderCivil/releases)
+1. Download the latest release from [Releases](https://github.com/DesertSpringsCivil/BlenderCivil/releases)
 2. Open Blender 4.2 or later
 3. Go to `Edit > Preferences > Get Extensions`
 4. Click the dropdown menu (▼) → `Install from Disk...`
@@ -162,9 +162,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Contact
 
-- **Project Homepage**: https://github.com/your-username/BlenderCivil
-- **Issue Tracker**: https://github.com/your-username/BlenderCivil/issues
-- **Discussions**: https://github.com/your-username/BlenderCivil/discussions
+- **Project Homepage**: https://github.com/DesertSpringsCivil/BlenderCivil
+- **Issue Tracker**: https://github.com/DesertSpringsCivil/BlenderCivil/issues
+- **Discussions**: https://github.com/DesertSpringsCivil/BlenderCivil/discussions
 
 ## 💖 Support
 
