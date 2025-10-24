@@ -25,68 +25,106 @@ bl_info = {
 }
 
 import bpy
-from bpy.utils import register_class, unregister_class
+import sys
+import importlib
 
-# Import modules
-from . import preferences
-from . import ui
-from . import operators
-from . import properties
+# Check if we're reloading (for development)
+if "properties" in locals():
+    importlib.reload(properties)
+    importlib.reload(operators)
+    importlib.reload(ui)
+    importlib.reload(preferences)
+    print("BlenderCivil: Reloaded modules")
+else:
+    from . import properties
+    from . import operators
+    from . import ui
+    from . import preferences
+    print("BlenderCivil: Loaded modules")
 
-# Check if Bonsai/IfcOpenShell is available
+# Check for optional dependencies
 BONSAI_AVAILABLE = False
 IFC_AVAILABLE = False
 
 try:
     import ifcopenshell
     IFC_AVAILABLE = True
+    print("BlenderCivil: IfcOpenShell available")
 except ImportError:
-    pass
+    print("BlenderCivil: IfcOpenShell not available (optional)")
 
 try:
-    from bonsai.bim.ifc import IfcStore
+    import bonsai
     BONSAI_AVAILABLE = True
+    print("BlenderCivil: Bonsai available")
 except ImportError:
-    pass
+    print("BlenderCivil: Bonsai not available (optional)")
 
 # Module list for registration
 modules = (
-    preferences,
     properties,
     operators,
     ui,
+    preferences,
 )
+
 
 def register():
     """Register addon classes and properties"""
     
-    # Register all classes from modules
+    print(f"\n{'='*60}")
+    print(f"Registering BlenderCivil v{bl_info['version'][0]}.{bl_info['version'][1]}.{bl_info['version'][2]}")
+    print(f"{'='*60}")
+    
+    # Register all modules
     for module in modules:
         if hasattr(module, 'register'):
-            module.register()
+            try:
+                module.register()
+                print(f"✓ Registered: {module.__name__}")
+            except Exception as e:
+                print(f"✗ Error registering {module.__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"⚠ No register() in {module.__name__}")
     
     # Print status
     print(f"\n{'='*60}")
-    print(f"BlenderCivil v{bl_info['version'][0]}.{bl_info['version'][1]}.{bl_info['version'][2]} loaded")
+    print(f"BlenderCivil Loaded Successfully")
     print(f"{'='*60}")
-    print(f"IfcOpenShell: {'✓ Available' if IFC_AVAILABLE else '✗ Not found'}")
-    print(f"Bonsai: {'✓ Available' if BONSAI_AVAILABLE else '✗ Not found'}")
-    print(f"{'='*60}\n")
+    print(f"IfcOpenShell: {'✓ Available' if IFC_AVAILABLE else '✗ Not found (optional)'}")
+    print(f"Bonsai: {'✓ Available' if BONSAI_AVAILABLE else '✗ Not found (optional)'}")
+    print(f"{'='*60}")
     
     if not IFC_AVAILABLE:
-        print("⚠️  Install IfcOpenShell for IFC export features")
+        print("ℹ Install IfcOpenShell for IFC export features")
+        print("  pip install ifcopenshell")
     if not BONSAI_AVAILABLE:
-        print("⚠️  Install Bonsai addon for OpenBIM integration")
+        print("ℹ Install Bonsai addon for full OpenBIM integration")
+        print("  https://blenderbim.org/")
+    
+    print(f"{'='*60}\n")
+    
+    print("✓ Look for the 'Civil' tab in the 3D View sidebar (press N)")
+
 
 def unregister():
     """Unregister addon classes and properties"""
     
+    print("Unregistering BlenderCivil...")
+    
     # Unregister in reverse order
     for module in reversed(modules):
         if hasattr(module, 'unregister'):
-            module.unregister()
+            try:
+                module.unregister()
+                print(f"✓ Unregistered: {module.__name__}")
+            except Exception as e:
+                print(f"✗ Error unregistering {module.__name__}: {e}")
     
     print("BlenderCivil unloaded")
+
 
 if __name__ == "__main__":
     register()
