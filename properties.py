@@ -1,464 +1,404 @@
 """
-BlenderCivil Properties
+BlenderCivil v0.3.0 - Professional Property System
+IFC-Compatible Properties with Explicit Object References
 
-Custom properties for:
-- OASYS cloud platform integration
-- Alignment data (PI points, curves, stations)
-- Coordinate reference systems
-- IFC metadata
+This module defines property groups for the separate entity architecture,
+using Blender's PointerProperty for explicit object relationships instead
+of string-based references.
+
+Author: BlenderCivil Development Team
+Date: October 24, 2025
 """
 
 import bpy
 from bpy.props import (
-    StringProperty, 
-    FloatProperty, 
-    IntProperty, 
-    BoolProperty,
-    EnumProperty,
-    PointerProperty,
-    CollectionProperty,
+    StringProperty, FloatProperty, IntProperty, 
+    BoolProperty, PointerProperty, EnumProperty
 )
-from bpy.types import PropertyGroup, AddonPreferences
+from bpy.types import PropertyGroup
 
 
-# =============================================================================
-# OASYS Integration Properties
-# =============================================================================
-
-class OASYSProperties(PropertyGroup):
-    """Properties for OASYS cloud platform integration"""
+class AlignmentPIProperties(PropertyGroup):
+    """
+    Properties for PI (Point of Intersection) objects.
     
-    # API Configuration
-    oasys_api_url: StringProperty(
-        name="OASYS API URL",
-        description="Base URL for OASYS API Gateway",
-        default="https://your-api-id.execute-api.us-east-1.amazonaws.com/prod",
-        maxlen=1024
+    Enhanced Empty objects that serve as control points for horizontal alignment.
+    These correspond to intersection points where tangents would meet if extended.
+    
+    IFC Mapping: Part of IfcAlignment semantic structure (implicit PI)
+    """
+    
+    # Identification
+    object_type: StringProperty(
+        name="Object Type",
+        default='ALIGNMENT_PI',
+        description="Identifies this as an alignment PI point"
     )
     
-    oasys_api_key: StringProperty(
-        name="API Key",
-        description="Optional API key for OASYS authentication (future feature)",
-        default="",
-        maxlen=256,
-        subtype='PASSWORD'
+    index: IntProperty(
+        name="PI Index",
+        default=1,
+        min=1,
+        description="Sequential number of this PI in the alignment"
     )
     
-    # Available CRS Files (JSON string from S3)
-    available_crs_files: StringProperty(
-        name="Available CRS Files",
-        description="JSON list of available coordinate system files from OASYS",
-        default="[]",
-        maxlen=8192
-    )
-    
-    # Selected CRS File
-    selected_crs_file: StringProperty(
-        name="Selected CRS File",
-        description="S3 key of the selected coordinate system file",
-        default="",
-        maxlen=512
-    )
-    
-    # Connection Status
-    is_connected: BoolProperty(
-        name="Connected",
-        description="Whether connection to OASYS API is active",
-        default=False
-    )
-    
-    last_connection_time: StringProperty(
-        name="Last Connection",
-        description="Timestamp of last successful connection",
-        default=""
-    )
-    
-    # Processing Status
-    processing_status: StringProperty(
-        name="Processing Status",
-        description="Status of last PDF upload/processing",
-        default="idle"
-    )
-
-
-# =============================================================================
-# Alignment Properties
-# =============================================================================
-
-class AlignmentProperties(PropertyGroup):
-    """Properties for horizontal alignment design"""
-    
-    station_interval: FloatProperty(
-        name="Station Interval",
-        description="Distance between station markers",
-        default=100.0,
-        min=1.0,
-        max=1000.0,
-        unit='LENGTH'
-    )
-    
-    start_station: FloatProperty(
-        name="Start Station",
-        description="Starting station value (e.g., 0+00)",
+    # Geometric Properties
+    station: FloatProperty(
+        name="Station",
         default=0.0,
-        min=0.0,
-        unit='LENGTH'
+        unit='LENGTH',
+        description="Station location along alignment where this PI occurs"
     )
     
-    curve_radius: FloatProperty(
-        name="Default Curve Radius",
-        description="Default radius for horizontal curves",
+    radius: FloatProperty(
+        name="Curve Radius",
         default=500.0,
         min=10.0,
-        max=10000.0,
-        unit='LENGTH'
+        unit='LENGTH',
+        description="Radius of the curve at this PI"
     )
     
-    pi_size: FloatProperty(
-        name="PI Marker Size",
-        description="Display size of PI point markers",
-        default=10.0,
-        min=0.1,
-        max=50.0
+    design_speed: FloatProperty(
+        name="Design Speed",
+        default=35.0,
+        min=5.0,
+        max=120.0,
+        description="Design speed (mph) for this segment"
+    )
+    
+    # Object Pointer Properties (Explicit References)
+    alignment_root: PointerProperty(
+        type=bpy.types.Object,
+        name="Alignment Root",
+        description="Reference to parent alignment container"
+    )
+    
+    tangent_in: PointerProperty(
+        type=bpy.types.Object,
+        name="Incoming Tangent",
+        description="Tangent line entering this PI"
+    )
+    
+    tangent_out: PointerProperty(
+        type=bpy.types.Object,
+        name="Outgoing Tangent",
+        description="Tangent line leaving this PI"
+    )
+    
+    curve: PointerProperty(
+        type=bpy.types.Object,
+        name="Curve at PI",
+        description="Curve element at this PI (if exists)"
+    )
+
+
+class AlignmentTangentProperties(PropertyGroup):
+    """
+    Properties for Tangent Line objects.
+    
+    Straight line segments connecting PIs, representing the tangent
+    sections of the horizontal alignment.
+    
+    IFC Mapping: IfcAlignmentSegment with LINE type
+    """
+    
+    # Identification
+    object_type: StringProperty(
+        name="Object Type",
+        default='ALIGNMENT_TANGENT',
+        description="Identifies this as an alignment tangent"
+    )
+    
+    element_type: StringProperty(
+        name="Element Type",
+        default='LINE',
+        description="Geometric element type"
+    )
+    
+    # Constraint Type
+    constraint: EnumProperty(
+        name="Constraint",
+        items=[
+            ('FIXED', 'Fixed', 'Both ends locked to PIs - tangent line connects specific points'),
+            ('FLOATING', 'Floating', 'Tangent to one element, maintains relationship'),
+            ('FREE', 'Free', 'Tangent to both adjacent elements, fully dependent'),
+        ],
+        default='FIXED',
+        description="Constraint type determining how this element behaves during updates"
+    )
+    
+    # Geometric Properties
+    length: FloatProperty(
+        name="Length",
+        default=0.0,
+        unit='LENGTH',
+        description="Length of this tangent segment"
+    )
+    
+    bearing: FloatProperty(
+        name="Bearing",
+        default=0.0,
+        unit='ROTATION',
+        description="Bearing angle of this tangent (radians from north/+Y axis)"
+    )
+    
+    # Station Properties
+    start_station: FloatProperty(
+        name="Start Station",
+        default=0.0,
+        unit='LENGTH',
+        description="Station at beginning of this tangent"
+    )
+    
+    end_station: FloatProperty(
+        name="End Station",
+        default=0.0,
+        unit='LENGTH',
+        description="Station at end of this tangent"
+    )
+    
+    # Object Pointer Properties (Explicit References)
+    alignment_root: PointerProperty(
+        type=bpy.types.Object,
+        name="Alignment Root",
+        description="Reference to parent alignment container"
+    )
+    
+    pi_start: PointerProperty(
+        type=bpy.types.Object,
+        name="Start PI",
+        description="PI at the start of this tangent"
+    )
+    
+    pi_end: PointerProperty(
+        type=bpy.types.Object,
+        name="End PI",
+        description="PI at the end of this tangent"
+    )
+    
+    previous_element: PointerProperty(
+        type=bpy.types.Object,
+        name="Previous Element",
+        description="Previous element in alignment (curve or tangent)"
+    )
+    
+    next_element: PointerProperty(
+        type=bpy.types.Object,
+        name="Next Element",
+        description="Next element in alignment (curve or tangent)"
+    )
+
+
+class AlignmentCurveProperties(PropertyGroup):
+    """
+    Properties for Curve objects.
+    
+    Circular arc segments connecting tangent lines, providing smooth
+    transitions at PIs.
+    
+    IFC Mapping: IfcAlignmentSegment with CIRCULARARC type
+    """
+    
+    # Identification
+    object_type: StringProperty(
+        name="Object Type",
+        default='ALIGNMENT_CURVE',
+        description="Identifies this as an alignment curve"
+    )
+    
+    element_type: StringProperty(
+        name="Element Type",
+        default='CURVE',
+        description="Geometric element type"
+    )
+    
+    # Constraint Type
+    constraint: EnumProperty(
+        name="Constraint",
+        items=[
+            ('FIXED', 'Fixed', 'Fixed radius and location'),
+            ('FLOATING', 'Floating', 'Tangent to one element'),
+            ('FREE', 'Free', 'Tangent to both adjacent tangents - most common'),
+        ],
+        default='FREE',
+        description="Constraint type determining how this curve behaves during updates"
+    )
+    
+    # Geometric Properties
+    radius: FloatProperty(
+        name="Radius",
+        default=500.0,
+        min=10.0,
+        unit='LENGTH',
+        description="Radius of this circular curve"
+    )
+    
+    delta_angle: FloatProperty(
+        name="Delta Angle",
+        default=0.0,
+        unit='ROTATION',
+        description="Central angle (delta) of the curve in radians"
+    )
+    
+    length: FloatProperty(
+        name="Length",
+        default=0.0,
+        unit='LENGTH',
+        description="Arc length of this curve"
+    )
+    
+    tangent_length: FloatProperty(
+        name="Tangent Length",
+        default=0.0,
+        unit='LENGTH',
+        description="Length from PC/PT to PI along tangent"
+    )
+    
+    # Station Properties
+    start_station: FloatProperty(
+        name="Start Station",
+        default=0.0,
+        unit='LENGTH',
+        description="Station at PC (Point of Curvature)"
+    )
+    
+    end_station: FloatProperty(
+        name="End Station",
+        default=0.0,
+        unit='LENGTH',
+        description="Station at PT (Point of Tangency)"
+    )
+    
+    # Object Pointer Properties (Explicit References)
+    alignment_root: PointerProperty(
+        type=bpy.types.Object,
+        name="Alignment Root",
+        description="Reference to parent alignment container"
+    )
+    
+    pi: PointerProperty(
+        type=bpy.types.Object,
+        name="Associated PI",
+        description="PI point where this curve is located"
+    )
+    
+    previous_element: PointerProperty(
+        type=bpy.types.Object,
+        name="Previous Element",
+        description="Previous element in alignment (tangent)"
+    )
+    
+    next_element: PointerProperty(
+        type=bpy.types.Object,
+        name="Next Element",
+        description="Next element in alignment (tangent)"
+    )
+
+
+class AlignmentRootProperties(PropertyGroup):
+    """
+    Properties for Alignment Root container.
+    
+    Empty object serving as the root container for an alignment,
+    organizing all related elements in an IFC-compatible hierarchy.
+    
+    IFC Mapping: IfcAlignment
+    """
+    
+    # Identification
+    object_type: StringProperty(
+        name="Object Type",
+        default='ALIGNMENT_ROOT',
+        description="Identifies this as an alignment root container"
     )
     
     alignment_name: StringProperty(
         name="Alignment Name",
-        description="Name of the current alignment",
         default="Alignment_01",
-        maxlen=128
+        description="Human-readable name for this alignment"
     )
     
-    # Station Label Settings
-    text_size: FloatProperty(
-        name="Text Size",
-        description="Size of station label text",
-        default=10.0,
-        min=0.1,
-        max=100.0
-    )
-    
-    show_station_labels: BoolProperty(
-        name="Show Station Labels",
-        description="Display station labels along alignment",
-        default=True
-    )
-    
-    # Curve Settings
-    use_spiral_transitions: BoolProperty(
-        name="Use Spiral Transitions",
-        description="Add spiral transitions to curves",
-        default=False
-    )
-    
-    spiral_length: FloatProperty(
-        name="Spiral Length",
-        description="Length of spiral transitions",
-        default=100.0,
-        min=0.0,
-        max=500.0,
-        unit='LENGTH'
-    )
-
-
-# =============================================================================
-# Coordinate System Properties
-# =============================================================================
-
-class CoordinateSystemProperties(PropertyGroup):
-    """Properties for coordinate reference system (enhanced for OASYS)"""
-    
-    # Primary CRS Identification
-    epsg_code: StringProperty(
-        name="EPSG Code",
-        description="EPSG code for the coordinate reference system",
-        default="",
-        maxlen=16
-    )
-    
-    coordinate_system_name: StringProperty(
-        name="CRS Name",
-        description="Full name of the coordinate reference system",
-        default="",
-        maxlen=256
-    )
-    
-    # Datum Information
-    datum: StringProperty(
-        name="Horizontal Datum",
-        description="Geodetic datum (e.g., NAD83, WGS84)",
-        default="",
-        maxlen=64
-    )
-    
-    vertical_datum: StringProperty(
-        name="Vertical Datum",
-        description="Vertical datum (e.g., NAVD88, NGVD29)",
-        default="",
-        maxlen=64
-    )
-    
-    # Projection Details
-    projection: StringProperty(
-        name="Projection",
-        description="Map projection type (e.g., Lambert Conformal Conic)",
-        default="",
-        maxlen=128
-    )
-    
-    zone: StringProperty(
-        name="Zone",
-        description="Projection zone (e.g., Texas Central)",
-        default="",
-        maxlen=64
-    )
-    
-    # Units and Conversion
-    units: StringProperty(
-        name="Linear Units",
-        description="Linear units (meters, feet, US survey feet)",
-        default="meters",
-        maxlen=64
-    )
-    
-    scale_factor: FloatProperty(
-        name="Scale Factor",
-        description="Scale factor for unit conversion (e.g., 0.3048006096 for US Survey Feet)",
-        default=1.0,
-        min=0.0001,
-        max=1000.0,
-        precision=10
-    )
-    
-    # Status
-    has_crs: BoolProperty(
-        name="Has CRS",
-        description="Whether coordinate system has been set",
-        default=False
-    )
-    
-    confidence: EnumProperty(
-        name="Confidence Level",
-        description="Confidence level of CRS identification",
+    # Alignment Type
+    alignment_type: EnumProperty(
+        name="Alignment Type",
         items=[
-            ('NONE', "None", "No CRS set"),
-            ('LOW', "Low", "Low confidence identification"),
-            ('MEDIUM', "Medium", "Medium confidence identification"),
-            ('HIGH', "High", "High confidence identification"),
+            ('CENTERLINE', 'Centerline', 'Main road/rail centerline alignment'),
+            ('ROW', 'Right-of-Way', 'Right-of-way boundary line'),
+            ('EASEMENT', 'Easement', 'Easement boundary line'),
+            ('CURB', 'Curb', 'Curb line alignment'),
+            ('EDGE_PAVEMENT', 'Edge of Pavement', 'Pavement edge line'),
+            ('BASELINE', 'Baseline', 'Design baseline alignment'),
         ],
-        default='NONE'
+        default='CENTERLINE',
+        description="Functional type of this alignment"
     )
     
-    source: StringProperty(
-        name="CRS Source",
-        description="Source of CRS data (e.g., OASYS, manual entry)",
-        default="",
-        maxlen=128
+    # Design Properties
+    design_speed: FloatProperty(
+        name="Design Speed",
+        default=35.0,
+        min=5.0,
+        max=120.0,
+        description="Design speed (mph) for this alignment"
     )
     
-    # OASYS-specific data
-    found_on_page: IntProperty(
-        name="Found on Page",
-        description="PDF page where CRS was found",
-        default=0,
-        min=0
+    total_length: FloatProperty(
+        name="Total Length",
+        default=0.0,
+        unit='LENGTH',
+        description="Total length of the alignment"
     )
     
-    context: StringProperty(
-        name="Context",
-        description="Text context where CRS was identified",
-        default="",
-        maxlen=512
-    )
-
-
-# =============================================================================
-# IFC/OpenBIM Properties
-# =============================================================================
-
-class IFCProperties(PropertyGroup):
-    """Properties for IFC/OpenBIM metadata"""
-    
-    ifc_class: EnumProperty(
-        name="IFC Class",
-        description="IFC entity class for this object",
-        items=[
-            ('NONE', "None", "Not an IFC entity"),
-            ('IFCALIGNMENT', "IfcAlignment", "Horizontal/vertical alignment"),
-            ('IFCALIGNMENTHORIZONTAL', "IfcAlignmentHorizontal", "Horizontal alignment"),
-            ('IFCALIGNMENTVERTICAL', "IfcAlignmentVertical", "Vertical alignment"),
-            ('IFCALIGNMENTSEGMENT', "IfcAlignmentSegment", "Alignment segment"),
-            ('IFCREFERENT', "IfcReferent", "Reference point (station, PI)"),
-            ('IFCSITE', "IfcSite", "Project site"),
-            ('IFCBUILDING', "IfcBuilding", "Building structure"),
-            ('IFCROAD', "IfcRoad", "Road infrastructure (IFC 4.3)"),
-        ],
-        default='NONE'
-    )
-    
-    global_id: StringProperty(
-        name="GlobalId",
-        description="IFC GlobalId (UUID)",
-        default="",
-        maxlen=64
-    )
-    
-    is_alignment_entity: BoolProperty(
-        name="Is Alignment Entity",
-        description="Mark as IFC alignment entity",
-        default=False
-    )
-    
-    # Additional IFC Metadata
+    # Metadata
     description: StringProperty(
         name="Description",
-        description="IFC entity description",
         default="",
-        maxlen=512
+        description="Additional description of this alignment"
     )
     
-    object_type: StringProperty(
-        name="Object Type",
-        description="IFC ObjectType attribute",
-        default="",
-        maxlen=128
+    # Auto-update control
+    auto_update_enabled: BoolProperty(
+        name="Auto-Update Enabled",
+        default=True,
+        description="Automatically update alignment when PIs are moved"
     )
 
 
-# =============================================================================
-# Addon Preferences
-# =============================================================================
-
-class BlenderCivilPreferences(AddonPreferences):
-    """Addon-wide preferences for BlenderCivil"""
-    bl_idname = "BlenderCivil"
-    
-    # OASYS API Settings (global defaults)
-    default_oasys_api_url: StringProperty(
-        name="Default OASYS API URL",
-        description="Default API URL for new scenes",
-        default="https://your-api-id.execute-api.us-east-1.amazonaws.com/prod",
-        maxlen=1024
-    )
-    
-    # Display Settings
-    show_debug_info: BoolProperty(
-        name="Show Debug Info",
-        description="Print debug information to console",
-        default=False
-    )
-    
-    auto_apply_crs: BoolProperty(
-        name="Auto-Apply CRS",
-        description="Automatically apply coordinate system when retrieved from OASYS",
-        default=True
-    )
-    
-    # Default Alignment Settings
-    default_station_interval: FloatProperty(
-        name="Default Station Interval",
-        description="Default distance between station markers",
-        default=100.0,
-        min=1.0,
-        max=1000.0
-    )
-    
-    default_curve_radius: FloatProperty(
-        name="Default Curve Radius",
-        description="Default radius for horizontal curves",
-        default=500.0,
-        min=10.0,
-        max=10000.0
-    )
-    
-    def draw(self, context):
-        layout = self.layout
-        
-        box = layout.box()
-        box.label(text="OASYS Integration", icon='WORLD')
-        box.prop(self, "default_oasys_api_url")
-        box.prop(self, "auto_apply_crs")
-        
-        box = layout.box()
-        box.label(text="Alignment Defaults", icon='CURVE_BEZCURVE')
-        box.prop(self, "default_station_interval")
-        box.prop(self, "default_curve_radius")
-        
-        box = layout.box()
-        box.label(text="Development", icon='PREFERENCES')
-        box.prop(self, "show_debug_info")
-
-
-# =============================================================================
-# Unified Scene Properties Container
-# =============================================================================
-
-class CivilProperties(PropertyGroup):
-    """Main property group that contains all civil engineering properties"""
-    
-    # Sub-property groups
-    oasys: PointerProperty(type=OASYSProperties)
-    alignment: PointerProperty(type=AlignmentProperties)
-    crs: PointerProperty(type=CoordinateSystemProperties)
-    
-    # Quick access properties for operators
-    @property
-    def oasys_api_url(self):
-        """Quick access to OASYS API URL"""
-        return self.oasys.oasys_api_url
-    
-    @property
-    def selected_crs_file(self):
-        """Quick access to selected CRS file"""
-        return self.oasys.selected_crs_file
-    
-    @property
-    def available_crs_files(self):
-        """Quick access to available CRS files"""
-        return self.oasys.available_crs_files
-
-
-# =============================================================================
 # Registration
-# =============================================================================
-
 classes = (
-    OASYSProperties,
-    AlignmentProperties,
-    CoordinateSystemProperties,
-    IFCProperties,
-    BlenderCivilPreferences,
-    CivilProperties,
+    AlignmentPIProperties,
+    AlignmentTangentProperties,
+    AlignmentCurveProperties,
+    AlignmentRootProperties,
 )
+
 
 def register():
     """Register property groups"""
-    # Register all property classes
     for cls in classes:
         bpy.utils.register_class(cls)
     
-    # Register main property group to Scene
-    bpy.types.Scene.civil_properties = PointerProperty(type=CivilProperties)
+    # Register properties on Object type
+    bpy.types.Object.alignment_pi = PointerProperty(type=AlignmentPIProperties)
+    bpy.types.Object.alignment_tangent = PointerProperty(type=AlignmentTangentProperties)
+    bpy.types.Object.alignment_curve = PointerProperty(type=AlignmentCurveProperties)
+    bpy.types.Object.alignment_root = PointerProperty(type=AlignmentRootProperties)
     
-    # Register individual groups for backward compatibility and direct access
-    bpy.types.Scene.civil_alignment = PointerProperty(type=AlignmentProperties)
-    bpy.types.Scene.civil_crs = PointerProperty(type=CoordinateSystemProperties)
-    bpy.types.Scene.civil_oasys = PointerProperty(type=OASYSProperties)
-    
-    # Register IFC properties to Object for per-object metadata
-    bpy.types.Object.civil_ifc = PointerProperty(type=IFCProperties)
-    
-    print("BlenderCivil properties registered")
+    print("✓ BlenderCivil v0.3.0: Property system registered")
+
 
 def unregister():
     """Unregister property groups"""
-    # Unregister from types
-    del bpy.types.Object.civil_ifc
-    del bpy.types.Scene.civil_oasys
-    del bpy.types.Scene.civil_crs
-    del bpy.types.Scene.civil_alignment
-    del bpy.types.Scene.civil_properties
+    # Remove properties from Object type
+    del bpy.types.Object.alignment_pi
+    del bpy.types.Object.alignment_tangent
+    del bpy.types.Object.alignment_curve
+    del bpy.types.Object.alignment_root
     
     # Unregister classes in reverse order
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+
+
+if __name__ == "__main__":
+    register()
