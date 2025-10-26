@@ -14,9 +14,9 @@ from bpy.app.handlers import persistent
 
 # Import our object update functions
 try:
-    from . import alignment_objects_v2 as align_obj
+    from . import alignment_objects as align_obj
 except ImportError:
-    import alignment_objects_v2 as align_obj
+    import alignment_objects as align_obj
 
 
 # Store previous PI positions to detect actual movement

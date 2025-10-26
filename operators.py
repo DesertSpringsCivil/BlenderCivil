@@ -16,9 +16,9 @@ import math
 
 # Import our object creation functions
 try:
-    from . import alignment_objects_v2 as align_obj
+    from . import alignment_objects as align_obj
 except ImportError:
-    import alignment_objects_v2 as align_obj
+    import alignment_objects as align_obj
 
 
 class CIVIL_OT_create_alignment_separate_v2(Operator):

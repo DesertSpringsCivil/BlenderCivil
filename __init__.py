@@ -25,19 +25,19 @@ bl_info = {
 import bpy
 
 # Import all modules
-from . import properties_v2
-from . import alignment_objects_v2
-from . import operators_v2
-from . import handlers_v2
-from . import ui_v2
+from . import properties
+from . import alignment_objects
+from . import operators
+from . import handlers
+from . import ui
 
 
 # List of modules to register (in order)
 modules = (
-    properties_v2,
-    operators_v2,
-    handlers_v2,
-    ui_v2,
+    properties,
+    operators,
+    handlers,
+    ui,
 )
 
 
