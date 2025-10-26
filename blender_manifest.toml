@@ -36,16 +36,9 @@ tags = [
 ]
 
 # Permissions
-permissions = [
-    "files",
-    "network",
-]
-
-[permissions.files]
-reason = "Import/export alignment data, coordinate system files"
-
-[permissions.network]
-reason = "Integration with OASYS cloud platform for coordinate system extraction"
+[permissions]
+files = "Import/export alignment data, coordinate system files"
+network = "Integration with OASYS cloud platform for coordinate system extraction"
 
 # Optional build settings
 [build]
