@@ -53,7 +53,7 @@ def register():
         module.register()
     
     print("="*60)
-    print("✓ BlenderCivil v0.3.0 ready!")
+    print("âœ“ BlenderCivil v0.3.0 ready!")
     print("  Access from: View3D > Sidebar (N) > Civil Tab")
     print("="*60 + "\n")
 
@@ -64,7 +64,7 @@ def unregister():
     for module in reversed(modules):
         module.unregister()
     
-    print("✓ BlenderCivil v0.3.0 unregistered")
+    print("âœ“ BlenderCivil v0.3.0 unregistered")
 
 
 if __name__ == "__main__":

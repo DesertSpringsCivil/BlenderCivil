@@ -384,7 +384,7 @@ def register():
     bpy.types.Object.alignment_curve = PointerProperty(type=AlignmentCurveProperties)
     bpy.types.Object.alignment_root = PointerProperty(type=AlignmentRootProperties)
     
-    print("✓ BlenderCivil v0.3.0: Property system registered")
+    print("âœ“ BlenderCivil v0.3.0: Property system registered")
 
 
 def unregister():

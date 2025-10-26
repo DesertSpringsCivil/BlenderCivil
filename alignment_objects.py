@@ -58,7 +58,7 @@ def create_alignment_root(name="Alignment_01", alignment_type='CENTERLINE', desi
     # Link root to main alignment collection
     align_col.objects.link(root)
     
-    print(f"✓ Created alignment root: {name}")
+    print(f"âœ“ Created alignment root: {name}")
     return root
 
 
@@ -105,7 +105,7 @@ def create_pi_point(name, location, index, alignment_root, radius=500.0, design_
         # Fallback to scene collection
         bpy.context.scene.collection.objects.link(empty)
     
-    print(f"✓ Created PI: {name} at index {index}")
+    print(f"âœ“ Created PI: {name} at index {index}")
     return empty
 
 
@@ -188,7 +188,7 @@ def create_tangent_line(name, pi_start, pi_end, alignment_root):
     else:
         bpy.context.scene.collection.objects.link(obj)
     
-    print(f"✓ Created tangent: {name}, length={length:.2f}, bearing={math.degrees(bearing):.2f}°")
+    print(f"âœ“ Created tangent: {name}, length={length:.2f}, bearing={math.degrees(bearing):.2f}Â°")
     return obj
 
 
@@ -224,7 +224,7 @@ def create_curve(name, pi, pi_prev, pi_next, radius, alignment_root, sample_inte
     
     # If deflection is too small, no curve needed (straight line)
     if abs(deflection) < 0.001:  # ~0.06 degrees
-        print(f"  ⚠ Skipping curve at {name}: deflection too small ({math.degrees(deflection):.3f}°)")
+        print(f"  âš  Skipping curve at {name}: deflection too small ({math.degrees(deflection):.3f}Â°)")
         return None
     
     # Calculate tangent length
@@ -313,7 +313,7 @@ def create_curve(name, pi, pi_prev, pi_next, radius, alignment_root, sample_inte
     else:
         bpy.context.scene.collection.objects.link(obj)
     
-    print(f"✓ Created curve: {name}, R={radius:.2f}, Δ={math.degrees(deflection):.2f}°, L={arc_length:.2f}")
+    print(f"âœ“ Created curve: {name}, R={radius:.2f}, Î”={math.degrees(deflection):.2f}Â°, L={arc_length:.2f}")
     return obj
 
 
@@ -330,7 +330,7 @@ def update_tangent_geometry(tangent_obj):
     props = tangent_obj.alignment_tangent
     
     if not props.pi_start or not props.pi_end:
-        print(f"  ⚠ Cannot update {tangent_obj.name}: missing PI references")
+        print(f"  âš  Cannot update {tangent_obj.name}: missing PI references")
         return
     
     # Get curve data
@@ -352,7 +352,7 @@ def update_tangent_geometry(tangent_obj):
     dy = props.pi_end.location.y - props.pi_start.location.y
     props.bearing = math.atan2(dx, dy)
     
-    print(f"  ✓ Updated tangent: {tangent_obj.name}, new length={props.length:.2f}")
+    print(f"  âœ“ Updated tangent: {tangent_obj.name}, new length={props.length:.2f}")
 
 
 def update_curve_geometry(curve_obj):
@@ -368,7 +368,7 @@ def update_curve_geometry(curve_obj):
     props = curve_obj.alignment_curve
     
     if not props.pi:
-        print(f"  ⚠ Cannot update {curve_obj.name}: missing PI reference")
+        print(f"  âš  Cannot update {curve_obj.name}: missing PI reference")
         return
     
     # Get adjacent PI objects from tangents
@@ -377,14 +377,14 @@ def update_curve_geometry(curve_obj):
     tangent_out = pi.alignment_pi.tangent_out
     
     if not tangent_in or not tangent_out:
-        print(f"  ⚠ Cannot update {curve_obj.name}: missing tangent references")
+        print(f"  âš  Cannot update {curve_obj.name}: missing tangent references")
         return
     
     pi_prev = tangent_in.alignment_tangent.pi_start
     pi_next = tangent_out.alignment_tangent.pi_end
     
     if not pi_prev or not pi_next:
-        print(f"  ⚠ Cannot update {curve_obj.name}: missing adjacent PIs")
+        print(f"  âš  Cannot update {curve_obj.name}: missing adjacent PIs")
         return
     
     # Recalculate curve using same logic as create_curve
@@ -397,7 +397,7 @@ def update_curve_geometry(curve_obj):
     
     if abs(deflection) < 0.001:
         # No curve needed anymore - could delete it
-        print(f"  ⚠ {curve_obj.name}: deflection now too small, consider removing")
+        print(f"  âš  {curve_obj.name}: deflection now too small, consider removing")
         return
     
     radius = props.radius
@@ -445,7 +445,7 @@ def update_curve_geometry(curve_obj):
     props.length = arc_length
     props.tangent_length = tangent_length
     
-    print(f"  ✓ Updated curve: {curve_obj.name}, new Δ={math.degrees(deflection):.2f}°, L={arc_length:.2f}")
+    print(f"  âœ“ Updated curve: {curve_obj.name}, new Î”={math.degrees(deflection):.2f}Â°, L={arc_length:.2f}")
 
 
 def update_stations(alignment_root):
@@ -503,7 +503,7 @@ def update_stations(alignment_root):
     # Update total length on root
     alignment_root.alignment_root.total_length = current_station
     
-    print(f"  ✓ Updated stations: total length = {current_station:.2f}")
+    print(f"  âœ“ Updated stations: total length = {current_station:.2f}")
 
 
 # Test function

@@ -75,6 +75,65 @@ class CIVIL_PT_alignment_v2(Panel):
         
         layout.separator()
         
+        # Curve Editing section
+        box = layout.box()
+        box.label(text="Curve Editing:", icon='CURVE_BEZCIRCLE')
+        
+        # Check if a curve is selected
+        active_obj = context.active_object
+        if (active_obj and active_obj.type == 'CURVE' and 
+            hasattr(active_obj, 'alignment_curve') and
+            active_obj.alignment_curve.object_type == 'ALIGNMENT_CURVE'):
+            
+            # Show current radius with proper units
+            current_radius = active_obj.alignment_curve.radius
+            col = box.column(align=True)
+            col.label(text=f"Selected: {active_obj.name}")
+            
+            # Format radius with scene units
+            unit_settings = context.scene.unit_settings
+            if unit_settings.system == 'IMPERIAL':
+                # Convert meters to feet
+                radius_display = current_radius * 3.28084
+                unit_label = "ft"
+            elif unit_settings.system == 'METRIC':
+                radius_display = current_radius
+                unit_label = "m"
+            else:  # NONE
+                radius_display = current_radius
+                unit_label = "units"
+            
+            col.label(text=f"Current Radius: {radius_display:.2f} {unit_label}")
+            
+            # Set radius operator
+            col.operator("civil.set_curve_radius_v2",
+                        text="Set Radius",
+                        icon='CURVE_BEZCIRCLE')
+        else:
+            box.label(text="Select a curve to edit radius", icon='INFO')
+        
+        layout.separator()
+        
+        # PI Editing operators
+        box = layout.box()
+        box.label(text="PI Editing:", icon='EDITMODE_HLT')
+        
+        col = box.column(align=True)
+        col.operator("civil.insert_pi",
+                    text="Insert PI",
+                    icon='ADD')
+        col.operator("civil.delete_pi",
+                    text="Delete PI",
+                    icon='REMOVE')
+        
+        # Instructions for PI editing
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Insert: Select 2 consecutive PIs")
+        col.label(text="Delete: Select 1 PI (not first/last)")
+        
+        layout.separator()
+        
         # Auto-update status
         box = layout.box()
         box.label(text="Auto-Update Status:", icon='SETTINGS')
@@ -156,7 +215,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     
-    print("✓ BlenderCivil v0.3.0: UI registered")
+    print("âœ“ BlenderCivil v0.3.0: UI registered")
 
 
 def unregister():

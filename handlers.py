@@ -81,14 +81,14 @@ def alignment_auto_update_handler(scene, depsgraph):
                 if moved:
                     # PI has moved - mark this alignment for update
                     alignments_to_update.add(alignment_root)
-                    print(f"  ⚡ PI moved: {pi.name} from {prev_loc} to {current_loc}")
+                    print(f"  âš¡ PI moved: {pi.name} from {prev_loc} to {current_loc}")
             
             # Update stored position
             _pi_positions[pi_id] = current_loc
     
     # Update affected alignments
     for alignment_root in alignments_to_update:
-        print(f"\n⚡ AUTO-UPDATE: {alignment_root.name}")
+        print(f"\nâš¡ AUTO-UPDATE: {alignment_root.name}")
         
         # Get horizontal layout collection
         h_layout_name = f"{alignment_root.name}_Horizontal"
@@ -113,7 +113,7 @@ def alignment_auto_update_handler(scene, depsgraph):
         # Recalculate stations
         align_obj.update_stations(alignment_root)
         
-        print(f"✓ Auto-updated {len(tangents)} tangents and {len(curves)} curves")
+        print(f"âœ“ Auto-updated {len(tangents)} tangents and {len(curves)} curves")
 
 
 def clear_position_cache():
@@ -124,7 +124,7 @@ def clear_position_cache():
     """
     global _pi_positions
     _pi_positions = {}
-    print("✓ Cleared PI position cache")
+    print("âœ“ Cleared PI position cache")
 
 
 def register():
@@ -135,7 +135,7 @@ def register():
     
     # Register handler
     bpy.app.handlers.depsgraph_update_post.append(alignment_auto_update_handler)
-    print("✓ BlenderCivil v0.3.0: Auto-update handler registered")
+    print("âœ“ BlenderCivil v0.3.0: Auto-update handler registered")
 
 
 def unregister():
@@ -144,7 +144,7 @@ def unregister():
         bpy.app.handlers.depsgraph_update_post.remove(alignment_auto_update_handler)
     
     clear_position_cache()
-    print("✓ BlenderCivil v0.3.0: Auto-update handler unregistered")
+    print("âœ“ BlenderCivil v0.3.0: Auto-update handler unregistered")
 
 
 if __name__ == "__main__":
