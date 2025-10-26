@@ -12,6 +12,7 @@ Date: October 24, 2025
 import bpy
 from bpy.types import Operator
 from bpy.props import FloatProperty, StringProperty
+from mathutils import Vector
 import math
 
 # Import our object creation functions
@@ -21,7 +22,7 @@ except ImportError:
     import alignment_objects as align_obj
 
 
-class CIVIL_OT_create_alignment_separate_v2(Operator):
+class CIVIL_OT_create_alignment_separate(Operator):
     """
     Create a professional PI-driven alignment with separate entity architecture.
     
@@ -30,7 +31,7 @@ class CIVIL_OT_create_alignment_separate_v2(Operator):
     
     IFC Mapping: Creates IfcAlignment structure with segments
     """
-    bl_idname = "civil.create_alignment_separate_v2"
+    bl_idname = "civil.create_alignment_separate"
     bl_label = "Create Professional Alignment (v2)"
     bl_description = "Create alignment from PIs with separate entities and IFC structure"
     bl_options = {'REGISTER', 'UNDO'}
@@ -218,14 +219,14 @@ class CIVIL_OT_create_alignment_separate_v2(Operator):
         return {'FINISHED'}
 
 
-class CIVIL_OT_update_alignment_v2(Operator):
+class CIVIL_OT_update_alignment(Operator):
     """
     Update alignment geometry after PI movements.
     
     Manually triggers recalculation of tangents and curves when PIs have been moved.
     This is the manual update button (auto-update uses depsgraph handler).
     """
-    bl_idname = "civil.update_alignment_v2"
+    bl_idname = "civil.update_alignment"
     bl_label = "Update Alignment (v2)"
     bl_description = "Manually update alignment after moving PIs"
     bl_options = {'REGISTER', 'UNDO'}
@@ -284,14 +285,14 @@ class CIVIL_OT_update_alignment_v2(Operator):
         return {'FINISHED'}
 
 
-class CIVIL_OT_analyze_alignment_v2(Operator):
+class CIVIL_OT_analyze_alignment(Operator):
     """
     Generate detailed analysis report for alignment.
     
     Prints comprehensive information about the alignment structure,
     elements, and geometric properties.
     """
-    bl_idname = "civil.analyze_alignment_v2"
+    bl_idname = "civil.analyze_alignment"
     bl_label = "Analyze Alignment (v2)"
     bl_description = "Generate detailed alignment analysis report"
     bl_options = {'REGISTER'}
@@ -399,7 +400,7 @@ class CIVIL_OT_analyze_alignment_v2(Operator):
         return {'FINISHED'}
 
 
-class CIVIL_OT_set_curve_radius_v2(Operator):
+class CIVIL_OT_set_curve_radius(Operator):
     """
     Set the radius of a selected curve.
     
@@ -411,7 +412,7 @@ class CIVIL_OT_set_curve_radius_v2(Operator):
     2. Run operator and specify new radius
     3. Curve geometry updates automatically
     """
-    bl_idname = "civil.set_curve_radius_v2"
+    bl_idname = "civil.set_curve_radius"
     bl_label = "Set Curve Radius"
     bl_description = "Set radius of selected curve"
     bl_options = {'REGISTER', 'UNDO'}
@@ -677,7 +678,7 @@ class CIVIL_OT_insert_pi(Operator):
         
         # Step 5: Rebuild alignment with new PI
         # We'll use the update operator to regenerate everything
-        bpy.ops.civil.update_alignment_v2()
+        bpy.ops.civil.update_alignment()
         
         print(f"Inserted PI at index {new_index}")
 
@@ -810,17 +811,17 @@ class CIVIL_OT_delete_pi(Operator):
                     pi.alignment_pi.pi_index = current_index - 1
         
         # Step 5: Rebuild alignment
-        bpy.ops.civil.update_alignment_v2()
+        bpy.ops.civil.update_alignment()
         
         print(f"Deleted PI_{pi_index:03d}")
 
 
 # Registration
 classes = (
-    CIVIL_OT_create_alignment_separate_v2,
-    CIVIL_OT_update_alignment_v2,
-    CIVIL_OT_analyze_alignment_v2,
-    CIVIL_OT_set_curve_radius_v2,
+    CIVIL_OT_create_alignment_separate,
+    CIVIL_OT_update_alignment,
+    CIVIL_OT_analyze_alignment,
+    CIVIL_OT_set_curve_radius,
     CIVIL_OT_insert_pi,
     CIVIL_OT_delete_pi,
 )

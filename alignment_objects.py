@@ -80,10 +80,10 @@ def create_pi_point(name, location, index, alignment_root, radius=500.0, design_
     Returns:
         Empty object with alignment_pi properties
     """
-    # Create empty for PI
+    # Create empty for PI with better visibility
     empty = bpy.data.objects.new(name, None)
-    empty.empty_display_type = 'ARROWS'
-    empty.empty_display_size = 5.0
+    empty.empty_display_type = 'PLAIN_AXES'  # White cross, easier to select than arrows
+    empty.empty_display_size = 15.0  # Larger size for better visibility
     empty.location = location
     
     # Set parent to alignment root
@@ -141,8 +141,8 @@ def create_tangent_line(name, pi_start, pi_end, alignment_root):
     obj = bpy.data.objects.new(name, curve_data)
     obj.parent = alignment_root
     
-    # Visual properties
-    curve_data.bevel_depth = 0.5
+    # Visual properties - thin line for CAD-like appearance
+    curve_data.bevel_depth = 0.1  # Reduced from 0.5 for thinner lines
     curve_data.fill_mode = 'FULL'
     
     # Material - RED for tangents
@@ -276,8 +276,8 @@ def create_curve(name, pi, pi_prev, pi_next, radius, alignment_root, sample_inte
     obj = bpy.data.objects.new(name, curve_data)
     obj.parent = alignment_root
     
-    # Visual properties
-    curve_data.bevel_depth = 0.5
+    # Visual properties - thin line for CAD-like appearance
+    curve_data.bevel_depth = 0.1  # Reduced from 0.5 for thinner lines
     curve_data.fill_mode = 'FULL'
     
     # Material - GREEN for curves

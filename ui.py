@@ -13,10 +13,10 @@ import bpy
 from bpy.types import Panel
 
 
-class CIVIL_PT_alignment_v2(Panel):
+class CIVIL_PT_alignment(Panel):
     """Main panel for Professional Alignment Tools v2"""
     bl_label = "Professional Alignment (v0.3)"
-    bl_idname = "CIVIL_PT_alignment_v2"
+    bl_idname = "CIVIL_PT_alignment"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'Civil'
@@ -24,31 +24,13 @@ class CIVIL_PT_alignment_v2(Panel):
     def draw(self, context):
         layout = self.layout
         
-        # Header with version
-        box = layout.box()
-        box.label(text="BlenderCivil v0.3.0", icon='OUTLINER_OB_CURVE')
-        box.label(text="IFC-Compatible Separate Entities")
-        
-        layout.separator()
-        
-        # Instructions
-        box = layout.box()
-        box.label(text="Quick Start:", icon='INFO')
-        col = box.column(align=True)
-        col.label(text="1. Create PI points (Empties named PI_*)")
-        col.label(text="2. Position PIs along desired route")
-        col.label(text="3. Click 'Create Alignment'")
-        col.label(text="4. Move PIs with G key (auto-updates!)")
-        
-        layout.separator()
-        
         # Main operators
         box = layout.box()
         box.label(text="Alignment Creation:", icon='CURVE_BEZCURVE')
         
         # Create alignment operator with properties
         col = box.column(align=True)
-        op = col.operator("civil.create_alignment_separate_v2", 
+        op = col.operator("civil.create_alignment_separate", 
                          text="Create Professional Alignment",
                          icon='ADD')
         
@@ -65,11 +47,11 @@ class CIVIL_PT_alignment_v2(Panel):
         box.label(text="Alignment Management:", icon='FILE_REFRESH')
         
         col = box.column(align=True)
-        col.operator("civil.update_alignment_v2",
+        col.operator("civil.update_alignment",
                     text="Update from PIs (Manual)",
                     icon='FILE_REFRESH')
         
-        col.operator("civil.analyze_alignment_v2",
+        col.operator("civil.analyze_alignment",
                     text="Analyze Alignment",
                     icon='TEXT')
         
@@ -106,7 +88,7 @@ class CIVIL_PT_alignment_v2(Panel):
             col.label(text=f"Current Radius: {radius_display:.2f} {unit_label}")
             
             # Set radius operator
-            col.operator("civil.set_curve_radius_v2",
+            col.operator("civil.set_curve_radius",
                         text="Set Radius",
                         icon='CURVE_BEZCIRCLE')
         else:
@@ -131,43 +113,6 @@ class CIVIL_PT_alignment_v2(Panel):
         col.scale_y = 0.8
         col.label(text="Insert: Select 2 consecutive PIs")
         col.label(text="Delete: Select 1 PI (not first/last)")
-        
-        layout.separator()
-        
-        # Auto-update status
-        box = layout.box()
-        box.label(text="Auto-Update Status:", icon='SETTINGS')
-        
-        # Find alignment roots in scene
-        alignment_roots = [obj for obj in context.scene.objects
-                          if obj.type == 'EMPTY' and hasattr(obj, 'alignment_root')
-                          and obj.alignment_root.object_type == 'ALIGNMENT_ROOT']
-        
-        if alignment_roots:
-            for root in alignment_roots:
-                row = box.row()
-                row.label(text=root.name)
-                row.prop(root.alignment_root, "auto_update_enabled", 
-                        text="Auto-Update" if root.alignment_root.auto_update_enabled else "Manual Only",
-                        toggle=True)
-        else:
-            box.label(text="No alignments in scene", icon='INFO')
-        
-        layout.separator()
-        
-        # Status information
-        box = layout.box()
-        box.label(text="Scene Status:", icon='OUTLINER')
-        
-        # Count PIs
-        pis = [obj for obj in context.scene.objects 
-               if obj.type == 'EMPTY' and obj.name.startswith('PI_')]
-        box.label(text=f"PI Points: {len(pis)}")
-        box.label(text=f"Alignments: {len(alignment_roots)}")
-        
-        if alignment_roots:
-            total_length = sum(root.alignment_root.total_length for root in alignment_roots)
-            box.label(text=f"Total Length: {total_length:.2f}")
 
 
 def register_properties():
@@ -204,7 +149,7 @@ def unregister_properties():
 
 # Registration
 classes = (
-    CIVIL_PT_alignment_v2,
+    CIVIL_PT_alignment,
 )
 
 
