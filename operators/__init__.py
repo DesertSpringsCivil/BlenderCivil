@@ -14,7 +14,10 @@ from . import crs
 from . import cross_section
 from . import utils
 
+from . import georeferencing
+
 modules = (
+    georeferencing,
     alignment,
     crs,
     cross_section,

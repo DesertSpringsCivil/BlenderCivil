@@ -409,8 +409,100 @@ def unregister_properties():
     del bpy.types.Scene.active_cross_section_index
 
 
+# ============================================================================
+# GEOREFERENCING PANEL
+# ============================================================================
+
+class CIVIL_PT_Georeferencing(bpy.types.Panel):
+    """Panel for managing georeferencing"""
+    bl_label = "Georeferencing"
+    bl_idname = "CIVIL_PT_georeferencing"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'Civil'
+    bl_order = 2  # After Alignment panel
+    
+    def draw(self, context):
+        layout = self.layout
+        georef = context.scene.bc_georeferencing
+        
+        # Status indicator
+        if georef.is_georeferenced:
+            box = layout.box()
+            box.label(text="[X] Georeferenced", icon='WORLD')
+            
+            col = box.column(align=True)
+            col.label(text=f"CRS: {georef.crs_name}")
+            col.label(text=f"EPSG: {georef.epsg_code}")
+            
+            col.separator()
+            col.label(text="False Origin:")
+            col.label(text=f"  E: {georef.false_easting:,.0f}m")
+            col.label(text=f"  N: {georef.false_northing:,.0f}m")
+            col.label(text=f"  El: {georef.false_elevation:,.0f}m")
+            
+            # Precision info
+            if georef.max_distance_from_origin > 0:
+                ok, prec_mm, warning = self._verify_precision_display(georef.max_distance_from_origin)
+                col.separator()
+                if ok:
+                    col.label(text=f"[X] Precision: {prec_mm:.4f}mm", icon='CHECKMARK')
+                else:
+                    col.label(text=f"[!] Precision: {prec_mm:.2f}mm", icon='ERROR')
+        else:
+            box = layout.box()
+            box.label(text="Not Georeferenced", icon='QUESTION')
+            box.label(text="Setup georeferencing to work")
+            box.label(text="with real-world coordinates")
+        
+        # Setup button
+        layout.separator()
+        row = layout.row()
+        row.scale_y = 1.5
+        if georef.is_georeferenced:
+            row.operator("civil.setup_georeferencing", text="Update Georeferencing", icon='FILE_REFRESH')
+        else:
+            row.operator("civil.setup_georeferencing", text="Setup Georeferencing", icon='WORLD_DATA')
+        
+        # Tools
+        if georef.is_georeferenced:
+            layout.separator()
+            col = layout.column(align=True)
+            col.label(text="Tools:")
+            col.operator("civil.auto_calculate_false_origin", icon='PIVOT_MEDIAN')
+            col.operator("civil.verify_precision", icon='CHECKMARK')
+            
+            # Import/Export
+            col.separator()
+            col.label(text="Import/Export:")
+            col.operator("civil.import_landxml", text="Import LandXML", icon='IMPORT')
+            col.operator("civil.export_landxml", text="Export LandXML", icon='EXPORT')
+            
+            if context.active_object:
+                col.operator("civil.show_coordinate_info", icon='INFO')
+            
+            col.separator()
+            col.operator("civil.clear_georeferencing", icon='X')
+    
+    def _verify_precision_display(self, max_dist):
+        """Helper to verify precision for display"""
+        import sys
+        import os
+        addon_path = os.path.dirname(__file__)
+        if addon_path not in sys.path:
+            sys.path.insert(0, addon_path)
+        
+        from core.georeferencing import GeoreferencingUtils
+        return GeoreferencingUtils.verify_precision(max_dist)
+
+
+
 # Registration
+
+
+
 classes = (
+    CIVIL_PT_Georeferencing,
     CIVIL_PT_alignment,
     CIVIL_PT_cross_sections,
 )

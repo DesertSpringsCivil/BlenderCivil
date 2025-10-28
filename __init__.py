@@ -31,9 +31,12 @@ from . import operators
 from . import handlers
 from . import ui
 
+from .core import georeferencing
+
 
 # List of modules to register (in order)
 modules = (
+    georeferencing,
     properties,
     operators,
     handlers,
