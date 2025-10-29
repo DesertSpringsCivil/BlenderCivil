@@ -1,1 +1,0 @@
-"""BlenderCivil Core Module"""
