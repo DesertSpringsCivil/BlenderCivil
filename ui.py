@@ -426,7 +426,78 @@ class CIVIL_PT_Georeferencing(bpy.types.Panel):
         layout = self.layout
         georef = context.scene.bc_georeferencing
         
-        # Status indicator
+        # ========================================================================
+        # CRS Definition Section
+        # ========================================================================
+        box = layout.box()
+        box.label(text="Coordinate Reference System", icon='WORLD')
+        
+        # EPSG Code with Lookup button
+        row = box.row(align=True)
+        row.prop(georef, "epsg_code", text="EPSG")
+        row.operator("civil.lookup_epsg", text="", icon='VIEWZOOM')
+        
+        # CRS Name
+        box.prop(georef, "crs_name", text="Name")
+        
+        # Search button
+        row = box.row()
+        row.operator("civil.search_crs", text="Search CRS Database", icon='VIEWZOOM')
+        
+        # Display search results if available
+        if hasattr(context.scene, 'bc_crs_search_results') and len(context.scene.bc_crs_search_results) > 0:
+            results_box = box.box()
+            results_box.label(text="Search Results:", icon='PRESET')
+            
+            # Show up to 5 results
+            for i, result in enumerate(context.scene.bc_crs_search_results[:5]):
+                row = results_box.row()
+                
+                # Show deprecated warning
+                if result.deprecated:
+                    row.alert = True
+                
+                # Result info
+                col = row.column()
+                col.label(text=f"EPSG:{result.epsg_code} - {result.crs_name}")
+                if result.area:
+                    col.label(text=f"  Area: {result.area}")
+                
+                # Select button
+                col = row.column()
+                op = col.operator("civil.select_crs_from_search", text="", icon='CHECKMARK')
+                op.index = i
+            
+            if len(context.scene.bc_crs_search_results) > 5:
+                results_box.label(text=f"  ... and {len(context.scene.bc_crs_search_results) - 5} more")
+        
+        # Common CRS presets
+        box.separator()
+        col = box.column()
+        col.label(text="Common CRS:")
+        
+        # NAD83 UTM Zones
+        grid = col.grid_flow(columns=3, align=True)
+        
+        zones = [
+            (26910, "UTM 10N"),
+            (26911, "UTM 11N"),
+            (26912, "UTM 12N"),
+            (26913, "UTM 13N"),
+            (26914, "UTM 14N"),
+            (26915, "UTM 15N"),
+        ]
+        
+        for epsg, name in zones:
+            op = grid.operator("civil.set_common_crs", text=name)
+            op.epsg_code = epsg
+            op.crs_name = f"NAD83 / UTM zone {name.split()[1]}"
+        
+        layout.separator()
+        
+        # ========================================================================
+        # Status Display
+        # ========================================================================
         if georef.is_georeferenced:
             box = layout.box()
             box.label(text="[X] Georeferenced", icon='WORLD')
@@ -483,7 +554,7 @@ class CIVIL_PT_Georeferencing(bpy.types.Panel):
             
             col.separator()
             col.operator("civil.clear_georeferencing", icon='X')
-    
+
     def _verify_precision_display(self, max_dist):
         """Helper to verify precision for display"""
         import sys
