@@ -8,6 +8,7 @@ import math
 import ifcopenshell
 import ifcopenshell.guid
 from mathutils import Vector
+from .native_ifc_manager import NativeIfcManager
 
 
 class AlignmentVisualizer:
@@ -84,22 +85,53 @@ class AlignmentVisualizer:
             spline.points[1].co = (end_x, end_y, 0, 1)
             
         elif params.PredefinedType == "CIRCULARARC":
-            # Generate smooth arc
+            # Generate smooth arc with PROPER turn direction handling
             spline = curve_data.splines.new('POLY')
             num_points = 32
             spline.points.add(num_points - 1)
             
             start = params.StartPoint.Coordinates
             start_dir = params.StartDirection
-            radius = params.StartRadiusOfCurvature
+            radius = abs(params.StartRadiusOfCurvature)  # Use absolute value
             arc_length = params.SegmentLength
             angle_span = arc_length / radius
             
-            # Calculate center
-            center_offset_x = -radius * math.sin(start_dir)
-            center_offset_y = radius * math.cos(start_dir)
-            center_x = start[0] + center_offset_x
-            center_y = start[1] + center_offset_y
+            # Determine turn direction from IFC segment name
+            # If curve is at PI with deflection, we need to check actual geometry
+            # For now, calculate both possible centers and pick the correct one
+            
+            # CORRECTED METHOD: Calculate center perpendicular to start direction
+            # For LEFT turn (CCW): center is to the left of the tangent
+            # For RIGHT turn (CW): center is to the right of the tangent
+            
+            # Try left turn first (standard)
+            center_left_x = start[0] - radius * math.sin(start_dir)
+            center_left_y = start[1] + radius * math.cos(start_dir)
+            
+            # Calculate what the end point would be
+            end_angle_left = start_dir + angle_span
+            end_x_left = center_left_x + radius * math.cos(end_angle_left - math.pi/2)
+            end_y_left = center_left_y + radius * math.sin(end_angle_left - math.pi/2)
+            
+            # Try right turn (clockwise)
+            center_right_x = start[0] + radius * math.sin(start_dir)
+            center_right_y = start[1] - radius * math.cos(start_dir)
+            
+            end_angle_right = start_dir - angle_span
+            end_x_right = center_right_x + radius * math.cos(end_angle_right - math.pi/2)
+            end_y_right = center_right_y + radius * math.sin(end_angle_right - math.pi/2)
+            
+            # Use sign of radius in IFC to determine turn direction
+            # Negative radius = right turn (CW), Positive radius = left turn (CCW)
+            if params.StartRadiusOfCurvature < 0:
+                # Right turn (clockwise)
+                center_x = center_right_x
+                center_y = center_right_y
+                angle_span = -angle_span  # Negate for clockwise
+            else:
+                # Left turn (counterclockwise) - standard
+                center_x = center_left_x
+                center_y = center_left_y
             
             # Generate arc points
             for i in range(num_points):

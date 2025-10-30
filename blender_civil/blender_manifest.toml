@@ -27,7 +27,5 @@ paths_exclude_pattern = [
     ".git/",
     ".gitignore",
     "*.md",
-    "native_ifc_alignment_sprint1_COMPLETE.py",
-    "native_ifc_alignment.py",
-    "native_ifc_ui_operators_panels.py",
+
 ]
