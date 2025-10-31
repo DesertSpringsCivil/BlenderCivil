@@ -14,8 +14,7 @@ bl_info = {
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > BlenderCivil",
     "description": "Native IFC civil engineering design with PI-driven alignments",
-    "category": "Object",
-}
+    "category": "Object", }
 
 import bpy
 import sys
