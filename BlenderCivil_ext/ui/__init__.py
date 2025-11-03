@@ -11,6 +11,9 @@ from .. import core
 # Always import dependency panel (no IFC dependency)
 from . import dependency_panel
 
+# Import georeferencing properties (no IFC dependency for properties)
+from . import georef_properties
+
 # List of UI modules
 _ui_modules = [dependency_panel]
 
@@ -27,16 +30,21 @@ if core.has_ifc_support():
     # Import UI panel modules
     from . import alignment_panel
     from . import validation_panel
+    from . import panels
 
     _ui_modules.extend([
         alignment_panel,
         validation_panel,
+        panels,
     ])
 
 
 def register():
     """Register UI classes"""
     print("  [+] UI module loaded")
+
+    # Register georeferencing properties first
+    georef_properties.register()
 
     # Register UI panel modules
     for module in _ui_modules:
@@ -50,3 +58,6 @@ def unregister():
     # Unregister UI panel modules
     for module in reversed(_ui_modules):
         module.unregister()
+
+    # Unregister georeferencing properties last
+    georef_properties.unregister()

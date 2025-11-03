@@ -29,12 +29,14 @@ if core.has_ifc_support():
     from . import file_operators
     from . import pi_operators
     from . import validation_operators
+    from . import georef_operators
 
     _operator_modules = [
         alignment_operators,
         file_operators,
         pi_operators,
         validation_operators,
+        georef_operators,
     ]
 
 
