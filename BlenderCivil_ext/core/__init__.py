@@ -20,11 +20,13 @@ try:
     # Import IFC-dependent modules
     from . import native_ifc_manager
     from . import native_ifc_alignment
+    from . import native_ifc_vertical_alignment
     from . import alignment_visualizer
 
     _ifc_modules = [
         native_ifc_manager,
         native_ifc_alignment,
+        native_ifc_vertical_alignment,
         alignment_visualizer,
     ]
     _ifc_modules_loaded = True
