@@ -21,6 +21,7 @@ try:
     from . import native_ifc_manager
     from . import native_ifc_alignment
     from . import native_ifc_vertical_alignment
+    from . import native_ifc_cross_section
     from . import alignment_3d
     from . import alignment_visualizer
 
@@ -28,6 +29,7 @@ try:
         native_ifc_manager,
         native_ifc_alignment,
         native_ifc_vertical_alignment,
+        native_ifc_cross_section,
         alignment_3d,
         alignment_visualizer,
     ]

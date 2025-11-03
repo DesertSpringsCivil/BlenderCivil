@@ -17,6 +17,9 @@ from . import georef_properties
 # Import vertical alignment properties (no IFC dependency for properties)
 from . import vertical_properties
 
+# Import cross section properties (no IFC dependency for properties)
+from . import cross_section_properties
+
 # List of UI modules
 _ui_modules = [dependency_panel]
 
@@ -52,6 +55,9 @@ def register():
     # Register vertical alignment properties
     vertical_properties.register()
 
+    # Register cross section properties
+    cross_section_properties.register()
+
     # Register UI panel modules
     for module in _ui_modules:
         module.register()
@@ -64,6 +70,9 @@ def unregister():
     # Unregister UI panel modules
     for module in reversed(_ui_modules):
         module.unregister()
+
+    # Unregister cross section properties
+    cross_section_properties.unregister()
 
     # Unregister vertical alignment properties
     vertical_properties.unregister()
