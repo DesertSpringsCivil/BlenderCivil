@@ -32,6 +32,8 @@ if core.has_ifc_support():
     from . import georef_operators
     from . import vertical_operators
     from . import cross_section_operators
+    from . import cross_section_import_export
+    from . import visualization_operators
 
     _operator_modules = [
         alignment_operators,
@@ -41,6 +43,8 @@ if core.has_ifc_support():
         georef_operators,
         vertical_operators,
         cross_section_operators,
+        cross_section_import_export,
+        visualization_operators,
     ]
 
 
