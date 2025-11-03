@@ -30,6 +30,7 @@ if core.has_ifc_support():
     from . import pi_operators
     from . import validation_operators
     from . import georef_operators
+    from . import vertical_operators
 
     _operator_modules = [
         alignment_operators,
@@ -37,6 +38,7 @@ if core.has_ifc_support():
         pi_operators,
         validation_operators,
         georef_operators,
+        vertical_operators,
     ]
 
 

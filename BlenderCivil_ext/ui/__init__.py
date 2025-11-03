@@ -14,6 +14,9 @@ from . import dependency_panel
 # Import georeferencing properties (no IFC dependency for properties)
 from . import georef_properties
 
+# Import vertical alignment properties (no IFC dependency for properties)
+from . import vertical_properties
+
 # List of UI modules
 _ui_modules = [dependency_panel]
 
@@ -46,6 +49,9 @@ def register():
     # Register georeferencing properties first
     georef_properties.register()
 
+    # Register vertical alignment properties
+    vertical_properties.register()
+
     # Register UI panel modules
     for module in _ui_modules:
         module.register()
@@ -58,6 +64,9 @@ def unregister():
     # Unregister UI panel modules
     for module in reversed(_ui_modules):
         module.unregister()
+
+    # Unregister vertical alignment properties
+    vertical_properties.unregister()
 
     # Unregister georeferencing properties last
     georef_properties.unregister()
