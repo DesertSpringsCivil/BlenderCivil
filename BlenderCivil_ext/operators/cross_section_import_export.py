@@ -685,5 +685,30 @@ SUPPORTED WORKFLOWS:
     return summary
 
 
+# ==================== REGISTRATION ====================
+
+classes = (
+    BLENDERCIVIL_OT_import_landxml,
+    BLENDERCIVIL_OT_export_landxml,
+    BLENDERCIVIL_OT_batch_import,
+)
+
+
+def register():
+    """Register operator classes"""
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+    print("  [+] Cross section import/export operators registered")
+
+
+def unregister():
+    """Unregister operator classes"""
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+    print("  [-] Cross section import/export operators unregistered")
+
+
 if __name__ == "__main__":
     print(get_import_export_summary())
