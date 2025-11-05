@@ -25,6 +25,7 @@ if core.has_ifc_support():
     current_module.AlignmentVisualizer = AlignmentVisualizer
 
     # Import operator modules
+    from . import alignment_management_operators
     from . import alignment_operators
     from . import file_operators
     from . import pi_operators
@@ -34,8 +35,11 @@ if core.has_ifc_support():
     from . import cross_section_operators
     from . import cross_section_import_export
     from . import visualization_operators
+    from . import curve_operators
+    from . import corridor_operators
 
     _operator_modules = [
+        alignment_management_operators,
         alignment_operators,
         file_operators,
         pi_operators,
@@ -45,6 +49,8 @@ if core.has_ifc_support():
         cross_section_operators,
         cross_section_import_export,
         visualization_operators,
+        curve_operators,
+        corridor_operators,
     ]
 
 

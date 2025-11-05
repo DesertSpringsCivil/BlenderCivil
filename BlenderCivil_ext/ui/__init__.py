@@ -11,6 +11,9 @@ from .. import core
 # Always import dependency panel (no IFC dependency)
 from . import dependency_panel
 
+# Import alignment properties (no IFC dependency for properties)
+from . import alignment_properties
+
 # Import georeferencing properties (no IFC dependency for properties)
 from . import georef_properties
 
@@ -36,11 +39,13 @@ if core.has_ifc_support():
     # Import UI panel modules
     from . import alignment_panel
     from . import validation_panel
+    from . import corridor_panel
     from . import panels
 
     _ui_modules.extend([
         alignment_panel,
         validation_panel,
+        corridor_panel,
         panels,
     ])
 
@@ -49,13 +54,12 @@ def register():
     """Register UI classes"""
     print("  [+] UI module loaded")
 
-    # Register georeferencing properties first
+    # Register alignment properties FIRST (required by other modules)
+    alignment_properties.register()
+
+    # Register other property modules
     georef_properties.register()
-
-    # Register vertical alignment properties
     vertical_properties.register()
-
-    # Register cross section properties
     cross_section_properties.register()
 
     # Register UI panel modules
@@ -71,11 +75,10 @@ def unregister():
     for module in reversed(_ui_modules):
         module.unregister()
 
-    # Unregister cross section properties
+    # Unregister properties in reverse order
     cross_section_properties.unregister()
-
-    # Unregister vertical alignment properties
     vertical_properties.unregister()
-
-    # Unregister georeferencing properties last
     georef_properties.unregister()
+
+    # Unregister alignment properties LAST (unregister first registered last)
+    alignment_properties.unregister()

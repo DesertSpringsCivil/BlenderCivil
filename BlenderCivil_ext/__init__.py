@@ -45,8 +45,8 @@ def register():
     # Register modules in order
     print("\n[*] Loading modules:")
     core.register()
-    operators.register()
-    ui.register()
+    ui.register()         # Register UI properties FIRST (operators depend on them)
+    operators.register()  # Then operators can use the properties
 
     print("\n[+] BlenderCivil Extension loaded successfully!")
     print("[i] Location: 3D Viewport > Sidebar (N) > BlenderCivil tab")
@@ -58,8 +58,8 @@ def unregister():
     print("BlenderCivil Extension - Unregistering...")
 
     # Unregister modules in reverse order
-    ui.unregister()
-    operators.unregister()
+    operators.unregister()  # Unregister operators first (they use properties)
+    ui.unregister()         # Then UI properties
     core.unregister()
 
     print("[+] BlenderCivil Extension unregistered")
