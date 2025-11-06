@@ -24,6 +24,8 @@ try:
     from . import native_ifc_cross_section
     from . import alignment_3d
     from . import alignment_visualizer
+    from . import alignment_registry
+    from . import ifc_geometry_builders
     from . import corridor_mesh_generator
 
     _ifc_modules = [
@@ -33,6 +35,8 @@ try:
         native_ifc_cross_section,
         alignment_3d,
         alignment_visualizer,
+        alignment_registry,
+        ifc_geometry_builders,
         corridor_mesh_generator,
     ]
     _ifc_modules_loaded = True

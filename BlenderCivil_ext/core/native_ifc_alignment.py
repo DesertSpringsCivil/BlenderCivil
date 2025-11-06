@@ -1,6 +1,6 @@
 """
-Native IFC Alignment
-PI-driven horizontal alignment with professional geometry
+Native IFC Alignment (Updated)
+PI-driven horizontal alignment - PIs are pure intersection points (NO RADIUS!)
 """
 
 import bpy
@@ -44,13 +44,13 @@ class SimpleVector:
 # ==================== NATIVE IFC ALIGNMENT ====================
 
 class NativeIfcAlignment:
-    """Native IFC alignment with PI-driven design"""
+    """Native IFC alignment with PI-driven design - PIs are pure intersection points"""
     
     def __init__(self, ifc_file, name="New Alignment"):
         self.ifc = ifc_file
         self.alignment = None
         self.horizontal = None
-        self.pis = []
+        self.pis = []  # PIs have NO radius property!
         self.segments = []
         
         self.create_alignment_structure(name)
@@ -71,12 +71,12 @@ class NativeIfcAlignment:
             RelatingObject=self.alignment,
             RelatedObjects=[self.horizontal])
     
-    def add_pi(self, x, y, radius=0.0):
-        """Add PI to alignment"""
+    def add_pi(self, x, y):
+        """Add PI to alignment - Pure intersection point, NO RADIUS!"""
         pi_data = {
             'id': len(self.pis),
             'position': SimpleVector(x, y),
-            'radius': radius,
+            # NO RADIUS PROPERTY!
             'ifc_point': self.ifc.create_entity("IfcCartesianPoint",
                 Coordinates=[float(x), float(y)])
         }
@@ -86,91 +86,31 @@ class NativeIfcAlignment:
         return pi_data
     
     def regenerate_segments(self):
-        """Regenerate IFC segments from PIs - PROFESSIONAL METHOD
+        """Regenerate IFC tangent segments from PIs
         
-        Creates proper tangent-curve-tangent sequences per professional standards:
-        - Tangent segments connect consecutive PIs  
-        - Curves are inserted AT intermediate PIs (not at first/last)
-        - All elements properly connected: Tangent → Curve → Tangent → Curve → Tangent
-        
-        Example: For 4 PIs, creates 5 elements:
-        - Tangent from PI_0 to BC of curve at PI_1
-        - Curve at PI_1
-        - Tangent from EC of PI_1 curve to BC of curve at PI_2  
-        - Curve at PI_2
-        - Tangent from EC of PI_2 curve to PI_3
+        Creates straight line segments between consecutive PIs.
+        Curves are added separately via insert_curve_at_pi().
         """
         self.segments = []
         
         if len(self.pis) < 2:
             return
         
-        # Process each pair of consecutive PIs
+        # Create tangent lines between consecutive PIs
         for i in range(len(self.pis) - 1):
             curr_pi = self.pis[i]
             next_pi = self.pis[i + 1]
             
-            # Determine tangent start position
-            if i == 0:
-                # First tangent starts at first PI
-                start_pos = curr_pi['position']
-            else:
-                # Check if current PI has a curve
-                if curr_pi['radius'] > 0:
-                    # Start at EC of curve at current PI
-                    prev_pi = self.pis[i - 1]
-                    curve_data = self._calculate_curve(
-                        prev_pi['position'],
-                        curr_pi['position'],
-                        next_pi['position'],
-                        curr_pi['radius']
-                    )
-                    if curve_data:
-                        start_pos = curve_data['ec']
-                    else:
-                        start_pos = curr_pi['position']
-                else:
-                    # No curve, start at current PI
-                    start_pos = curr_pi['position']
-            
-            # Determine tangent end position
-            if i + 1 < len(self.pis) - 1 and next_pi['radius'] > 0:
-                # Next PI has a curve, tangent ends at BC
-                next_next_pi = self.pis[i + 2]
-                curve_data = self._calculate_curve(
-                    curr_pi['position'],
-                    next_pi['position'],
-                    next_next_pi['position'],
-                    next_pi['radius']
-                )
-                if curve_data:
-                    end_pos = curve_data['bc']
-                else:
-                    end_pos = next_pi['position']
-            else:
-                # No curve at next PI, tangent goes to next PI
-                end_pos = next_pi['position']
-            
-            # Create tangent segment
-            tangent_seg = self._create_tangent_segment(start_pos, end_pos)
+            # Simple tangent from this PI to next PI
+            tangent_seg = self._create_tangent_segment(
+                curr_pi['position'],
+                next_pi['position']
+            )
             self.segments.append(tangent_seg)
-            
-            # Add curve at next PI if applicable (not for last PI)
-            print(f"  DEBUG: i={i}, next_PI_id={next_pi['id']}, radius={next_pi['radius']}, check: {i + 1 < len(self.pis) - 1}")
-            if i + 1 < len(self.pis) - 1 and next_pi['radius'] > 0:
-                print(f"    → Creating curve at PI_{next_pi['id']}")
-                next_next_pi = self.pis[i + 2]
-                curve_data = self._calculate_curve(
-                    curr_pi['position'],
-                    next_pi['position'],
-                    next_next_pi['position'],
-                    next_pi['radius']
-                )
-                if curve_data:
-                    curve_seg = self._create_curve_segment(curve_data, next_pi['id'])
-                    self.segments.append(curve_seg)
         
         self._update_ifc_nesting()
+        
+        print(f"[Alignment] Regenerated {len(self.segments)} tangent segments from {len(self.pis)} PIs")
     
     def _create_tangent_segment(self, start_pos, end_pos):
         """Create IFC tangent segment"""
@@ -194,19 +134,98 @@ class NativeIfcAlignment:
         )
         return segment
     
-    def _create_curve_segment(self, curve_data, pi_id=None):
-        """Create IFC curve segment with SIGNED radius for turn direction
+    def insert_curve_at_pi(self, pi_index, radius):
+        """Insert curve at specified PI with given radius
         
-        Per IFC convention:
-        - Positive radius = LEFT turn (counterclockwise)
-        - Negative radius = RIGHT turn (clockwise)
+        This is called by the curve tool to add curves between tangents.
+        
+        Args:
+            pi_index: Index of PI where curve should be inserted
+            radius: Curve radius in meters
+        
+        Returns:
+            Curve data dictionary
         """
+        if pi_index <= 0 or pi_index >= len(self.pis) - 1:
+            print(f"[Alignment] Cannot insert curve at PI {pi_index} (must be interior PI)")
+            return None
+        
+        # Get the three PIs involved
+        prev_pi = self.pis[pi_index - 1]
+        curr_pi = self.pis[pi_index]
+        next_pi = self.pis[pi_index + 1]
+        
+        # Calculate curve geometry
+        curve_data = self._calculate_curve(
+            prev_pi['position'],
+            curr_pi['position'],
+            next_pi['position'],
+            radius
+        )
+        
+        if not curve_data:
+            print(f"[Alignment] Could not calculate curve at PI {pi_index}")
+            return None
+        
+        # Store curve data with PI
+        curr_pi['curve'] = curve_data
+        
+        # Regenerate all segments (now with curve consideration)
+        self.regenerate_segments_with_curves()
+        
+        return curve_data
+    
+    def regenerate_segments_with_curves(self):
+        """Regenerate segments considering curves at PIs
+        
+        This creates: Tangent → Curve → Tangent → Curve → Tangent
+        where curves exist at PIs that have curve data.
+        """
+        self.segments = []
+        
+        if len(self.pis) < 2:
+            return
+        
+        for i in range(len(self.pis) - 1):
+            curr_pi = self.pis[i]
+            next_pi = self.pis[i + 1]
+            
+            # Determine tangent start
+            if i == 0:
+                start_pos = curr_pi['position']
+            else:
+                # If previous PI has curve, start at EC
+                if 'curve' in self.pis[i - 1]:
+                    start_pos = self.pis[i - 1]['curve']['ec']
+                else:
+                    start_pos = curr_pi['position']
+            
+            # Determine tangent end
+            if 'curve' in curr_pi and i + 1 < len(self.pis):
+                # PI has curve, end at BC
+                end_pos = curr_pi['curve']['bc']
+            else:
+                end_pos = next_pi['position']
+            
+            # Create tangent segment
+            tangent = self._create_tangent_segment(start_pos, end_pos)
+            self.segments.append(tangent)
+            
+            # Add curve if present at current PI
+            if 'curve' in curr_pi and i + 1 < len(self.pis):
+                curve = self._create_curve_segment(curr_pi['curve'], curr_pi['id'])
+                self.segments.append(curve)
+        
+        self._update_ifc_nesting()
+        
+        print(f"[Alignment] Regenerated {len(self.segments)} segments with curves")
+    
+    def _create_curve_segment(self, curve_data, pi_id=None):
+        """Create IFC curve segment with SIGNED radius for turn direction"""
         name = f"Curve_{pi_id}" if pi_id is not None else f"Curve_{len(self.segments)}"
         
         # Use signed radius based on deflection angle
         signed_radius = curve_data['radius'] if curve_data['deflection'] > 0 else -curve_data['radius']
-        # DEBUG OUTPUT
-        print(f"  _create_curve_segment: deflection={curve_data['deflection']:.4f} rad ({math.degrees(curve_data['deflection']):.2f}°), radius={curve_data['radius']}, signed_radius={signed_radius}")
         
         segment = self.ifc.create_entity("IfcAlignmentSegment",
             GlobalId=ifcopenshell.guid.new(),
@@ -225,20 +244,14 @@ class NativeIfcAlignment:
         return segment
     
     def _calculate_curve(self, prev_pi, curr_pi, next_pi, radius):
-        """Calculate curve geometry from PIs with SIGNED deflection angle
-        
-        Positive deflection = LEFT turn (counterclockwise)
-        Negative deflection = RIGHT turn (clockwise)
-        """
+        """Calculate curve geometry from PIs with SIGNED deflection angle"""
         t1 = (curr_pi - prev_pi).normalized()
         t2 = (next_pi - curr_pi).normalized()
         
-        # Calculate SIGNED deflection angle using atan2
-        # This preserves turn direction information
+        # Calculate SIGNED deflection angle
         angle1 = math.atan2(t1.y, t1.x)
         angle2 = math.atan2(t2.y, t2.x)
         
-        # Calculate signed deflection
         deflection = angle2 - angle1
         
         # Normalize to [-π, π]
@@ -247,12 +260,11 @@ class NativeIfcAlignment:
         elif deflection < -math.pi:
             deflection += 2 * math.pi
         
-        # Check if deflection is too small (nearly straight)
+        # Check if deflection is too small
         if abs(deflection) < 0.001:
             return None
         
         # Calculate curve geometry
-        # Use absolute deflection for tangent length calculation
         tangent_length = radius * math.tan(abs(deflection) / 2)
         bc = curr_pi - t1 * tangent_length
         ec = curr_pi + t2 * tangent_length
@@ -263,7 +275,7 @@ class NativeIfcAlignment:
             'ec': ec,
             'radius': radius,
             'arc_length': arc_length,
-            'deflection': deflection,  # SIGNED deflection (+ = left, - = right)
+            'deflection': deflection,
             'start_direction': angle1,
             'turn_direction': 'LEFT' if deflection > 0 else 'RIGHT'
         }
@@ -271,10 +283,14 @@ class NativeIfcAlignment:
     def _update_ifc_nesting(self):
         """Update IFC nesting relationships"""
         if self.segments:
+            # Remove old nesting
+            for rel in self.horizontal.IsNestedBy or []:
+                self.ifc.remove(rel)
+            
+            # Create new nesting
             self.ifc.create_entity("IfcRelNests",
                 GlobalId=ifcopenshell.guid.new(),
                 Name="HorizontalToSegments",
                 RelatingObject=self.horizontal,
                 RelatedObjects=self.segments
             )
-

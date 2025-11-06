@@ -1,26 +1,28 @@
 """
-Interactive PI Operations (Revised)
+Interactive PI Operations (Revised with Real-time Visualization)
 PIs are pure tangent intersection points - NO radius property
-Curves are separate elements added via curve tools
+Creates IFC entities and visualizations in real-time as user clicks
 """
 
 import bpy
 import gpu
 import blf
+import math
 from bpy.props import StringProperty, FloatProperty, IntProperty, BoolProperty
 from mathutils import Vector
 from gpu_extras.batch import batch_for_shader
 
 
 class BC_OT_add_pi_interactive(bpy.types.Operator):
-    """Add PIs by clicking in the viewport - Pure intersection points"""
+    """Add PIs by clicking in the viewport - Pure intersection points with real-time visualization"""
     bl_idname = "bc.add_pi_interactive"
     bl_label = "Add PI (Click to Place)"
     bl_options = {'REGISTER', 'UNDO'}
     
     # Internal state
     _handle = None
-    _points_placed = []
+    _alignment_obj = None  # NativeIfcAlignment instance
+    _visualizer = None     # AlignmentVisualizer instance
     _last_mouse_pos = None
     
     def modal(self, context, event):
@@ -31,12 +33,12 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
             self._last_mouse_pos = (event.mouse_region_x, event.mouse_region_y)
             return {'RUNNING_MODAL'}
         
-        # Left click - Place PI (no dialog, immediate placement!)
+        # Left click - Place PI (immediate placement with visualization!)
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
             # Get 3D location from mouse click
             location = self.get_3d_location_from_mouse(context, event)
             if location:
-                # Add PI immediately - no radius needed
+                # Add PI immediately with visualization
                 self.add_pi_at_location(location)
             return {'RUNNING_MODAL'}
         
@@ -56,6 +58,7 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
         # Validate prerequisites
         from . import NativeIfcManager
         from ..ui.alignment_properties import get_active_alignment_ifc, refresh_alignment_list
+        from ..core.alignment_registry import get_or_create_alignment, get_or_create_visualizer
         
         # Check for IFC file
         ifc = NativeIfcManager.get_file()
@@ -80,6 +83,15 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
             set_active_alignment(context, alignments[0])
             active_alignment = alignments[0]
             self.report({'INFO'}, f"Set {active_alignment.Name} as active alignment")
+        
+        # Get or create the Python alignment instance and visualizer
+        self._alignment_obj, was_created = get_or_create_alignment(active_alignment)
+        self._visualizer, vis_created = get_or_create_visualizer(self._alignment_obj)
+        
+        if was_created:
+            print(f"[PI Tool] Created new alignment instance")
+        if vis_created:
+            print(f"[PI Tool] Created new visualizer")
         
         # Setup drawing handler for HUD
         args = (self, context)
@@ -117,31 +129,30 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
         return None
     
     def add_pi_at_location(self, location):
-        """Add PI at location - Pure intersection point, no radius"""
-        from . import NativeIfcManager, NativeIfcAlignment, AlignmentVisualizer
-        from ..ui.alignment_properties import get_active_alignment_ifc
+        """Add PI at location with immediate IFC creation and visualization"""
         
-        # Get active alignment
-        active_alignment = get_active_alignment_ifc(bpy.context)
-        
-        if not active_alignment:
-            self.report({'ERROR'}, "No active alignment")
+        if not self._alignment_obj or not self._visualizer:
+            self.report({'ERROR'}, "Alignment or visualizer not initialized")
             return
         
-        # Store the point in operator memory
-        self._points_placed.append({
-            'location': location,
-            'index': len(self._points_placed)
-        })
+        # Add PI to alignment (creates IFC entity)
+        pi_data = self._alignment_obj.add_pi(location.x, location.y)
         
-        self.report({'INFO'}, f"Placed PI {len(self._points_placed)} at ({location.x:.2f}, {location.y:.2f})")
+        # Create visual marker immediately
+        pi_marker = self._visualizer.create_pi_object(pi_data)
         
-        # TODO INTEGRATION: 
-        # Get the NativeIfcAlignment Python instance from registry
-        # alignment_obj = get_alignment_instance(active_alignment)
-        # pi_data = alignment_obj.add_pi(location.x, location.y)  # NO RADIUS!
-        # visualizer = get_or_create_visualizer(alignment_obj)
-        # visualizer.create_pi_object(pi_data)
+        # Update tangent line visualization if we have 2+ PIs
+        if len(self._alignment_obj.pis) >= 2:
+            # Visualize the last created segment (should be the newest tangent)
+            if self._alignment_obj.segments:
+                last_segment = self._alignment_obj.segments[-1]
+                self._visualizer.create_segment_curve(last_segment)
+        
+        pi_count = len(self._alignment_obj.pis)
+        self.report({'INFO'}, f"✓ PI {pi_count} at ({location.x:.2f}, {location.y:.2f})")
+        
+        print(f"[PI Tool] Added PI {pi_count} at ({location.x:.2f}, {location.y:.2f})")
+        print(f"[PI Tool] Total segments: {len(self._alignment_obj.segments)}")
     
     def draw_callback_px(self, operator, context):
         """Draw on-screen instructions and visual feedback"""
@@ -157,7 +168,7 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
         blf.position(font_id, 15, 55, 0)
         blf.size(font_id, 14)
         blf.color(font_id, 0.9, 0.9, 0.9, 1.0)
-        blf.draw(font_id, "🖱️  Left Click: Place PI (no dialog!)")
+        blf.draw(font_id, "🖱️  Left Click: Place PI (immediate!)")
         
         blf.position(font_id, 15, 38, 0)
         blf.draw(font_id, "✔ Enter / Right Click: Finish")
@@ -166,18 +177,19 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
         blf.draw(font_id, "✖ ESC: Cancel")
         
         # Show point count if any points placed
-        if len(self._points_placed) > 0:
+        if self._alignment_obj and len(self._alignment_obj.pis) > 0:
+            pi_count = len(self._alignment_obj.pis)
             blf.position(font_id, context.region.width - 180, 45, 0)
             blf.size(font_id, 18)
             blf.color(font_id, 0.3, 1.0, 0.4, 1.0)
-            blf.draw(font_id, f"PIs Placed: {len(self._points_placed)}")
+            blf.draw(font_id, f"PIs Placed: {pi_count}")
             
             # Show last PI coordinates
-            last_pi = self._points_placed[-1]
+            last_pi = self._alignment_obj.pis[-1]
             blf.position(font_id, context.region.width - 180, 25, 0)
             blf.size(font_id, 13)
             blf.color(font_id, 0.8, 0.8, 0.8, 1.0)
-            blf.draw(font_id, f"Last: ({last_pi['location'].x:.1f}, {last_pi['location'].y:.1f})")
+            blf.draw(font_id, f"Last: ({last_pi['position'].x:.1f}, {last_pi['position'].y:.1f})")
         
         # Draw crosshair cursor at mouse position
         if self._last_mouse_pos:
@@ -202,7 +214,6 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
             batch.draw(shader)
             
             # Draw circle at cursor
-            import math
             circle_segments = 24
             circle_vertices = []
             circle_radius = 8
@@ -219,15 +230,20 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
             gpu.state.blend_set('NONE')
     
     def finish(self, context):
-        """Finish interactive mode and commit all PIs"""
+        """Finish interactive mode - PIs and segments already in IFC!"""
         # Remove drawing handler
         if self._handle:
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
         
-        if len(self._points_placed) > 0:
-            self.report({'INFO'}, f"✅ Placed {len(self._points_placed)} PIs. Tangent lines created automatically.")
-        else:
-            self.report({'WARNING'}, "No PIs placed")
+        if self._alignment_obj:
+            pi_count = len(self._alignment_obj.pis)
+            segment_count = len(self._alignment_obj.segments)
+            
+            if pi_count > 0:
+                self.report({'INFO'}, f"✅ Placed {pi_count} PIs, created {segment_count} tangent segments")
+                print(f"[PI Tool] Finished: {pi_count} PIs, {segment_count} segments in IFC")
+            else:
+                self.report({'WARNING'}, "No PIs placed")
         
         context.area.tag_redraw()
     
@@ -235,6 +251,8 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
         """Cancel interactive mode"""
         if self._handle:
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+        
+        # TODO: Could implement undo here - remove PIs added during this session
         
         self.report({'INFO'}, "PI placement cancelled")
         context.area.tag_redraw()
@@ -251,18 +269,32 @@ class BC_OT_add_native_pi(bpy.types.Operator):
     
     def execute(self, context):
         from . import NativeIfcManager
+        from ..ui.alignment_properties import get_active_alignment_ifc
+        from ..core.alignment_registry import get_or_create_alignment, get_or_create_visualizer
         
         cursor = context.scene.cursor.location
         
         # Get active alignment
-        ifc = NativeIfcManager.get_file()
-        alignments = ifc.by_type("IfcAlignment")
-        
-        if not alignments:
-            self.report({'ERROR'}, "No alignment found. Create an alignment first.")
+        active_alignment = get_active_alignment_ifc(context)
+        if not active_alignment:
+            self.report({'ERROR'}, "No active alignment. Create an alignment first.")
             return {'CANCELLED'}
         
+        # Get alignment instance
+        alignment_obj, _ = get_or_create_alignment(active_alignment)
+        visualizer, _ = get_or_create_visualizer(alignment_obj)
+        
         # Add PI - no radius!
+        pi_data = alignment_obj.add_pi(cursor.x, cursor.y)
+        
+        # Create visualization
+        visualizer.create_pi_object(pi_data)
+        
+        # Update tangents if we have 2+ PIs
+        if len(alignment_obj.pis) >= 2 and alignment_obj.segments:
+            last_segment = alignment_obj.segments[-1]
+            visualizer.create_segment_curve(last_segment)
+        
         self.report({'INFO'}, f"Added PI at ({cursor.x:.2f}, {cursor.y:.2f})")
         return {'FINISHED'}
 

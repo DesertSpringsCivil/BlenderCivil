@@ -1,6 +1,7 @@
 """
-Alignment Visualizer
+Alignment Visualizer (Updated)
 3D visualization of IFC alignments in Blender
+PIs have NO radius - always green markers!
 """
 
 import bpy
@@ -8,7 +9,6 @@ import math
 import ifcopenshell
 import ifcopenshell.guid
 from mathutils import Vector
-from .native_ifc_manager import NativeIfcManager
 
 
 class AlignmentVisualizer:
@@ -36,7 +36,7 @@ class AlignmentVisualizer:
         self.collection["ifc_class"] = "IfcAlignment"
     
     def create_pi_object(self, pi_data):
-        """Create Blender Empty for PI"""
+        """Create Blender Empty for PI - Always GREEN (no radius!)"""
         obj = bpy.data.objects.new(f"PI_{pi_data['id']:03d}", None)
         obj.empty_display_type = 'SPHERE'
         obj.empty_display_size = 3.0
@@ -46,20 +46,22 @@ class AlignmentVisualizer:
         # Link to IFC
         obj["ifc_pi_id"] = pi_data['id']
         obj["ifc_point_id"] = pi_data['ifc_point'].id()
-        obj["radius"] = pi_data['radius']
+        # NO RADIUS PROPERTY!
         
-        # Color code
-        if pi_data['radius'] > 0:
-            obj.color = (1.0, 0.5, 0.0, 1.0)  # Orange for curves
-        else:
-            obj.color = (0.0, 1.0, 0.0, 1.0)  # Green for tangent points
+        # Always GREEN for PIs (they're just intersection points)
+        obj.color = (0.0, 1.0, 0.0, 1.0)
         
         self.collection.objects.link(obj)
         self.pi_objects.append(obj)
+        
+        print(f"[Visualizer] Created PI marker: PI_{pi_data['id']:03d}")
+        
         return obj
     
     def create_segment_curve(self, ifc_segment):
         """Create Blender curve for IFC segment"""
+        from .native_ifc_manager import NativeIfcManager
+        
         params = ifc_segment.DesignParameters
         
         # Create curve data
@@ -92,46 +94,20 @@ class AlignmentVisualizer:
             
             start = params.StartPoint.Coordinates
             start_dir = params.StartDirection
-            radius = abs(params.StartRadiusOfCurvature)  # Use absolute value
+            radius = abs(params.StartRadiusOfCurvature)
             arc_length = params.SegmentLength
             angle_span = arc_length / radius
             
-            # Determine turn direction from IFC segment name
-            # If curve is at PI with deflection, we need to check actual geometry
-            # For now, calculate both possible centers and pick the correct one
-            
-            # CORRECTED METHOD: Calculate center perpendicular to start direction
-            # For LEFT turn (CCW): center is to the left of the tangent
-            # For RIGHT turn (CW): center is to the right of the tangent
-            
-            # Try left turn first (standard)
-            center_left_x = start[0] - radius * math.sin(start_dir)
-            center_left_y = start[1] + radius * math.cos(start_dir)
-            
-            # Calculate what the end point would be
-            end_angle_left = start_dir + angle_span
-            end_x_left = center_left_x + radius * math.cos(end_angle_left - math.pi/2)
-            end_y_left = center_left_y + radius * math.sin(end_angle_left - math.pi/2)
-            
-            # Try right turn (clockwise)
-            center_right_x = start[0] + radius * math.sin(start_dir)
-            center_right_y = start[1] - radius * math.cos(start_dir)
-            
-            end_angle_right = start_dir - angle_span
-            end_x_right = center_right_x + radius * math.cos(end_angle_right - math.pi/2)
-            end_y_right = center_right_y + radius * math.sin(end_angle_right - math.pi/2)
-            
-            # Use sign of radius in IFC to determine turn direction
-            # Negative radius = right turn (CW), Positive radius = left turn (CCW)
+            # Determine turn direction from sign of radius
             if params.StartRadiusOfCurvature < 0:
                 # Right turn (clockwise)
-                center_x = center_right_x
-                center_y = center_right_y
-                angle_span = -angle_span  # Negate for clockwise
+                center_x = start[0] + radius * math.sin(start_dir)
+                center_y = start[1] - radius * math.cos(start_dir)
+                angle_span = -angle_span
             else:
-                # Left turn (counterclockwise) - standard
-                center_x = center_left_x
-                center_y = center_left_y
+                # Left turn (counterclockwise)
+                center_x = start[0] - radius * math.sin(start_dir)
+                center_y = start[1] + radius * math.cos(start_dir)
             
             # Generate arc points
             for i in range(num_points):
@@ -152,20 +128,50 @@ class AlignmentVisualizer:
         
         # Color code
         if params.PredefinedType == "LINE":
-            obj.color = (0.2, 0.6, 1.0, 1.0)  # Blue
+            obj.color = (0.2, 0.6, 1.0, 1.0)  # Blue for tangents
         else:
-            obj.color = (1.0, 0.3, 0.3, 1.0)  # Red
+            obj.color = (1.0, 0.3, 0.3, 1.0)  # Red for curves
         
         self.collection.objects.link(obj)
         self.segment_objects.append(obj)
+        
+        print(f"[Visualizer] Created segment: {ifc_segment.Name} ({params.PredefinedType})")
+        
         return obj
     
+    def clear_visualizations(self):
+        """Clear all existing visualizations"""
+        # Remove all objects in collection
+        for obj in self.pi_objects + self.segment_objects:
+            if obj and obj.name in bpy.data.objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+        
+        self.pi_objects.clear()
+        self.segment_objects.clear()
+        
+        print(f"[Visualizer] Cleared visualizations")
+    
+    def update_visualizations(self):
+        """Update all visualizations from current alignment state"""
+        # Clear existing
+        self.clear_visualizations()
+        
+        # Recreate all PIs
+        for pi_data in self.alignment.pis:
+            self.create_pi_object(pi_data)
+        
+        # Recreate all segments
+        for segment in self.alignment.segments:
+            self.create_segment_curve(segment)
+        
+        print(f"[Visualizer] Updated: {len(self.pi_objects)} PIs, {len(self.segment_objects)} segments")
+    
     def visualize_all(self):
-        """Create complete visualization"""
+        """Create complete visualization - Legacy method for compatibility"""
         print(f"\n[*] Creating {len(self.alignment.pis)} PI markers...")
         for pi_data in self.alignment.pis:
             self.create_pi_object(pi_data)
-            print(f"  PI {pi_data['id']}: ({pi_data['position'].x:.2f}, {pi_data['position'].y:.2f}) R={pi_data['radius']:.2f}m")
+            print(f"  PI {pi_data['id']}: ({pi_data['position'].x:.2f}, {pi_data['position'].y:.2f})")
 
         print(f"\n[*] Creating {len(self.alignment.segments)} segment curves...")
         for segment in self.alignment.segments:
@@ -177,4 +183,3 @@ class AlignmentVisualizer:
         print(f"   Collection: {self.collection.name}")
         print(f"   PIs: {len(self.pi_objects)} objects")
         print(f"   Segments: {len(self.segment_objects)} curves")
-
