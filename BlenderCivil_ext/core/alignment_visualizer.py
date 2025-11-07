@@ -13,36 +13,60 @@ from mathutils import Vector
 
 class AlignmentVisualizer:
     """Create Blender visualization of IFC alignment"""
-    
+
     def __init__(self, native_alignment):
         self.alignment = native_alignment
-        self.collection = None
+        self.collection = None  # Will use project collection
+        self.alignment_empty = None  # Main alignment empty
         self.pi_objects = []
         self.segment_objects = []
-        
-        self.setup_collection()
-    
-    def setup_collection(self):
-        """Create collection for alignment"""
+
+        self.setup_hierarchy()
+
+    def setup_hierarchy(self):
+        """Create alignment empty in IFC hierarchy (no separate collection)"""
+        from .native_ifc_manager import NativeIfcManager
+
         name = self.alignment.alignment.Name or "Alignment"
-        
-        if name in bpy.data.collections:
-            self.collection = bpy.data.collections[name]
+
+        # Use the project collection for all objects (no separate collection)
+        self.collection = NativeIfcManager.get_project_collection()
+        if not self.collection:
+            # Fallback to scene collection
+            self.collection = bpy.context.scene.collection
+
+        # Create alignment empty and parent to Alignments organizational empty
+        alignments_parent = NativeIfcManager.get_alignments_collection()
+        if alignments_parent:
+            # Check if alignment empty already exists
+            alignment_empty_name = f"📐 {name}"
+            if alignment_empty_name in bpy.data.objects:
+                self.alignment_empty = bpy.data.objects[alignment_empty_name]
+            else:
+                # Create new alignment empty
+                self.alignment_empty = bpy.data.objects.new(alignment_empty_name, None)
+                self.alignment_empty.empty_display_type = 'ARROWS'
+                self.alignment_empty.empty_display_size = 2.0
+                self.alignment_empty.parent = alignments_parent
+
+                # Link to IFC
+                self.alignment_empty["ifc_definition_id"] = self.alignment.alignment.id()
+                self.alignment_empty["ifc_class"] = "IfcAlignment"
+
+                # Add to project collection
+                self.collection.objects.link(self.alignment_empty)
+                print(f"[Visualizer] Created alignment empty: {alignment_empty_name}")
         else:
-            self.collection = bpy.data.collections.new(name)
-            bpy.context.scene.collection.children.link(self.collection)
-        
-        self.collection["ifc_definition_id"] = self.alignment.alignment.id()
-        self.collection["ifc_class"] = "IfcAlignment"
+            print(f"[Visualizer] Warning: No Alignments parent found")
     
     def create_pi_object(self, pi_data):
         """Create Blender Empty for PI - Always GREEN (no radius!)"""
         obj = bpy.data.objects.new(f"PI_{pi_data['id']:03d}", None)
         obj.empty_display_type = 'SPHERE'
         obj.empty_display_size = 3.0
-        obj.location = Vector((pi_data['position'].x, 
+        obj.location = Vector((pi_data['position'].x,
                               pi_data['position'].y, 0))
-        
+
         # Link to IFC
         obj["ifc_pi_id"] = pi_data['id']
         obj["ifc_point_id"] = pi_data['ifc_point'].id()
@@ -57,12 +81,18 @@ class AlignmentVisualizer:
 
         # Always GREEN for PIs (they're just intersection points)
         obj.color = (0.0, 1.0, 0.0, 1.0)
-        
+
+        # Link to project collection
         self.collection.objects.link(obj)
+
+        # Parent to alignment empty for hierarchy organization
+        if self.alignment_empty:
+            obj.parent = self.alignment_empty
+
         self.pi_objects.append(obj)
-        
+
         print(f"[Visualizer] Created PI marker: PI_{pi_data['id']:03d}")
-        
+
         return obj
     
     def create_segment_curve(self, ifc_segment):
@@ -126,24 +156,30 @@ class AlignmentVisualizer:
         
         # Create object
         obj = bpy.data.objects.new(ifc_segment.Name, curve_data)
-        
+
         # Link to IFC
         NativeIfcManager.link_object(obj, ifc_segment)
-        
+
         # Visual properties
         curve_data.bevel_depth = 0.5
-        
+
         # Color code
         if params.PredefinedType == "LINE":
             obj.color = (0.2, 0.6, 1.0, 1.0)  # Blue for tangents
         else:
             obj.color = (1.0, 0.3, 0.3, 1.0)  # Red for curves
-        
+
+        # Link to project collection
         self.collection.objects.link(obj)
+
+        # Parent to alignment empty for hierarchy organization
+        if self.alignment_empty:
+            obj.parent = self.alignment_empty
+
         self.segment_objects.append(obj)
-        
+
         print(f"[Visualizer] Created segment: {ifc_segment.Name} ({params.PredefinedType})")
-        
+
         return obj
     
     def clear_visualizations(self):

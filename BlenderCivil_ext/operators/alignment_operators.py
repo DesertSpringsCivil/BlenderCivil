@@ -26,10 +26,13 @@ class BC_OT_create_native_alignment(bpy.types.Operator):
         from ..ui.alignment_properties import add_alignment_to_list, set_active_alignment
         from ..core.alignment_registry import register_alignment, register_visualizer
 
+        # Ensure IFC file exists (create if needed)
         ifc = NativeIfcManager.get_file()
         if not ifc:
-            self.report({'ERROR'}, "No IFC file")
-            return {'CANCELLED'}
+            # Create new IFC file with hierarchy if none exists
+            result = NativeIfcManager.new_file()
+            ifc = result['ifc_file']
+            self.report({'INFO'}, "Created new IFC project")
 
         # Create alignment
         alignment = NativeIfcAlignment(ifc, self.name)
@@ -41,12 +44,16 @@ class BC_OT_create_native_alignment(bpy.types.Operator):
         # Register in instance registry
         register_alignment(alignment)
 
-        # Create visualizer
+        # Create visualizer and store reference
         visualizer = AlignmentVisualizer(alignment)
         register_visualizer(visualizer, alignment.alignment.GlobalId)
 
+        # CRITICAL: Store visualizer reference in alignment object for update system
+        alignment.visualizer = visualizer
+
         self.report({'INFO'}, f"Created alignment: {self.name}")
         print(f"[Alignment] Created and registered: {self.name}")
+        print(f"[Alignment] Visualizer attached for real-time updates")
 
         return {'FINISHED'}
 

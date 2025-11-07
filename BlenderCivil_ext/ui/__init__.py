@@ -37,12 +37,14 @@ if core.has_ifc_support():
     current_module.NativeIfcManager = NativeIfcManager
 
     # Import UI panel modules
+    from . import file_management_panel
     from . import alignment_panel
     from . import validation_panel
     from . import corridor_panel
     from . import panels
 
     _ui_modules.extend([
+        file_management_panel,
         alignment_panel,
         validation_panel,
         corridor_panel,
