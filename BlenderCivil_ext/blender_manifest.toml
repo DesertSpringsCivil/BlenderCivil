@@ -1,0 +1,26 @@
+schema_version = "1.0.0"
+
+id = "blendercivil_ext"
+name = "BlenderCivil"
+tagline = "Native IFC civil engineering design tools"
+version = "0.5.0"
+type = "add-on"
+
+maintainer = "Desert Springs CE, Michael Yoder"
+license = ["SPDX:GPL-3.0-or-later"]
+
+blender_version_min = "4.5.0"
+blender_version_max = "4.6.0"
+
+[permissions]
+files = "Import/export files"
+network = "Access IFC data online"
+
+[build]
+paths_exclude_pattern = [
+    "__pycache__/",
+    "*.pyc",
+    ".git/",
+    ".vscode/",
+    "*.md",
+]
