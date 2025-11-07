@@ -91,7 +91,7 @@ class VIEW3D_PT_native_ifc_alignment(bpy.types.Panel):
         # PRIMARY: Interactive PI placement
         row = col.row(align=True)
         row.scale_y = 1.3
-        op = row.operator("bc.add_pi_interactive", text="📍 Click to Place PIs", icon='HAND')
+        op = row.operator("bc.add_pi_interactive", text="Click to Place PIs", icon='HAND')
         
         col.separator()
         
@@ -129,7 +129,7 @@ class VIEW3D_PT_native_ifc_alignment(bpy.types.Panel):
         # PRIMARY: Interactive curve insertion
         row = col.row(align=True)
         row.scale_y = 1.3
-        op = row.operator("bc.add_curve_interactive", text="🔄 Add Curve", icon='HAND')
+        op = row.operator("bc.add_curve_interactive", text="Add Curve", icon='HAND')
         
         col.separator()
         

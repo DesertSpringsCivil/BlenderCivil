@@ -48,6 +48,10 @@ def register():
     ui.register()         # Register UI properties FIRST (operators depend on them)
     operators.register()  # Then operators can use the properties
 
+    # Register update system for real-time PI movement
+    from .core import complete_update_system
+    complete_update_system.register()
+
     print("\n[+] BlenderCivil Extension loaded successfully!")
     print("[i] Location: 3D Viewport > Sidebar (N) > BlenderCivil tab")
     print("="*60 + "\n")
@@ -56,6 +60,10 @@ def register():
 def unregister():
     """Unregister extension modules and classes"""
     print("BlenderCivil Extension - Unregistering...")
+
+    # Unregister update system first
+    from .core import complete_update_system
+    complete_update_system.unregister()
 
     # Unregister modules in reverse order
     operators.unregister()  # Unregister operators first (they use properties)

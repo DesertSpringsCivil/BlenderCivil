@@ -52,9 +52,22 @@ class NativeIfcAlignment:
         self.horizontal = None
         self.pis = []  # PIs have NO radius property!
         self.segments = []
-        
+
         self.create_alignment_structure(name)
-    
+
+        # Register for updates
+        self.auto_update = True
+        from .complete_update_system import register_alignment
+        register_alignment(self)
+
+    def __del__(self):
+        """Cleanup when alignment is deleted."""
+        try:
+            from .complete_update_system import unregister_alignment
+            unregister_alignment(self)
+        except:
+            pass
+
     def create_alignment_structure(self, name):
         """Create IFC alignment hierarchy"""
         self.alignment = self.ifc.create_entity("IfcAlignment",

@@ -33,6 +33,7 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
     _last_mouse_pos = None
     _hovered_object = None
     _state = "SELECT_FIRST"  # States: SELECT_FIRST, SELECT_SECOND, ENTER_RADIUS
+    _dialog_active = False  # Flag to prevent cancel() when dialog is shown
     
     def modal(self, context, event):
         context.area.tag_redraw()
@@ -65,6 +66,13 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
                         self._second_tangent = obj
                         # Check if tangents are adjacent
                         if self.are_tangents_adjacent(self._first_tangent, self._second_tangent):
+                            # Remove draw handler BEFORE showing dialog (prevents crash)
+                            if self._handle:
+                                bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+                                self._handle = None
+                            context.area.tag_redraw()
+                            # Set flag to prevent cancel() from running
+                            self._dialog_active = True
                             # Show radius dialog
                             return context.window_manager.invoke_props_dialog(self, width=300)
                         else:
@@ -127,25 +135,55 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
         """Draw the radius input dialog"""
         layout = self.layout
         layout.label(text=f"Insert curve between:")
-        layout.label(text=f"  • {self._first_tangent.name}")
-        layout.label(text=f"  • {self._second_tangent.name}")
+
+        # Safely get tangent names
+        try:
+            first_name = self._first_tangent.name if self._first_tangent else "Unknown"
+            second_name = self._second_tangent.name if self._second_tangent else "Unknown"
+        except (AttributeError, ReferenceError):
+            first_name = "Unknown"
+            second_name = "Unknown"
+
+        layout.label(text=f"  • {first_name}")
+        layout.label(text=f"  • {second_name}")
         layout.separator()
         layout.prop(self, "radius")
     
     def execute(self, context):
         """Called when OK is clicked in the radius dialog"""
+        # Reset dialog flag
+        self._dialog_active = False
+
+        # Validate that we still have valid tangent references
+        if not self._first_tangent or not self._second_tangent:
+            self.report({'ERROR'}, "Tangent references lost")
+            return {'CANCELLED'}
+
+        # Validate tangent objects still exist in scene
+        try:
+            if self._first_tangent.name not in bpy.data.objects:
+                self.report({'ERROR'}, "First tangent no longer exists")
+                return {'CANCELLED'}
+            if self._second_tangent.name not in bpy.data.objects:
+                self.report({'ERROR'}, "Second tangent no longer exists")
+                return {'CANCELLED'}
+        except (AttributeError, ReferenceError):
+            self.report({'ERROR'}, "Invalid tangent object reference")
+            return {'CANCELLED'}
+
         # Create the curve
         success = self.create_curve(self._first_tangent, self._second_tangent, self.radius)
-        
+
         if success:
-            self.report({'INFO'}, f"✅ Created curve with R={self.radius:.1f}m")
+            self.report({'INFO'}, f"[OK] Created curve with R={self.radius:.1f}m")
         else:
             self.report({'ERROR'}, "Failed to create curve")
-        
+
         # Clean up and exit
         if self._handle:
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-        
+            self._handle = None
+
         context.area.tag_redraw()
         return {'FINISHED'}
     
@@ -234,23 +272,23 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
         blf.position(font_id, 15, 80, 0)
         blf.size(font_id, 22)
         blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
-        blf.draw(font_id, "🔄 Add Curve Between Tangents")
-        
+        blf.draw(font_id, "[CURVE] Add Curve Between Tangents")
+
         blf.position(font_id, 15, 55, 0)
         blf.size(font_id, 14)
         blf.color(font_id, 0.9, 0.9, 0.9, 1.0)
-        
+
         if self._state == "SELECT_FIRST":
-            blf.draw(font_id, "🖱️  Click FIRST tangent segment")
+            blf.draw(font_id, "Click FIRST tangent segment")
         elif self._state == "SELECT_SECOND":
-            blf.draw(font_id, "🖱️  Click SECOND tangent segment")
+            blf.draw(font_id, "Click SECOND tangent segment")
             blf.position(font_id, 15, 38, 0)
             blf.color(font_id, 0.3, 1.0, 0.4, 1.0)
-            blf.draw(font_id, f"✓ First: {self._first_tangent.name}")
+            blf.draw(font_id, f"[+] First: {self._first_tangent.name}")
         
         blf.position(font_id, 15, 21, 0)
         blf.color(font_id, 0.9, 0.9, 0.9, 1.0)
-        blf.draw(font_id, "✖ ESC: Cancel")
+        blf.draw(font_id, "[X] ESC: Cancel")
         
         # Highlight hovered object
         if self._hovered_object and self.is_tangent_segment(self._hovered_object):
@@ -258,7 +296,7 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
             blf.position(font_id, context.region.width - 250, 45, 0)
             blf.size(font_id, 16)
             blf.color(font_id, 1.0, 1.0, 0.0, 1.0)
-            blf.draw(font_id, f"↗ Hover: {self._hovered_object.name}")
+            blf.draw(font_id, f"[>>] Hover: {self._hovered_object.name}")
         
         # Draw cursor - different color for curve tool (orange)
         if self._last_mouse_pos:
@@ -298,9 +336,13 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
     
     def cancel(self, context):
         """Cancel curve addition"""
+        # Don't run cancel if we're transitioning to dialog (prevents double cleanup crash)
+        if self._dialog_active:
+            return
+
         if self._handle:
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-        
+
         self.report({'INFO'}, "Curve addition cancelled")
         context.area.tag_redraw()
 

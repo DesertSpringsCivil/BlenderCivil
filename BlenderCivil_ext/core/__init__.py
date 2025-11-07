@@ -25,6 +25,7 @@ try:
     from . import alignment_3d
     from . import alignment_visualizer
     from . import alignment_registry
+    from . import complete_update_system
     from . import ifc_geometry_builders
     from . import corridor_mesh_generator
 
@@ -36,6 +37,7 @@ try:
         alignment_3d,
         alignment_visualizer,
         alignment_registry,
+        complete_update_system,
         ifc_geometry_builders,
         corridor_mesh_generator,
     ]

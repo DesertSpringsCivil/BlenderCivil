@@ -47,7 +47,14 @@ class AlignmentVisualizer:
         obj["ifc_pi_id"] = pi_data['id']
         obj["ifc_point_id"] = pi_data['ifc_point'].id()
         # NO RADIUS PROPERTY!
-        
+
+        # CRITICAL: Add these for update system!
+        obj['bc_pi_id'] = pi_data['id']
+        obj['bc_alignment_id'] = str(id(self.alignment))  # Store as string (Python int too large for C int)
+
+        # CRITICAL: Store reference!
+        pi_data['blender_object'] = obj
+
         # Always GREEN for PIs (they're just intersection points)
         obj.color = (0.0, 1.0, 0.0, 1.0)
         
@@ -165,7 +172,11 @@ class AlignmentVisualizer:
             self.create_segment_curve(segment)
         
         print(f"[Visualizer] Updated: {len(self.pi_objects)} PIs, {len(self.segment_objects)} segments")
-    
+
+    def update_all(self):
+        """Update entire visualization - Required by complete_update_system"""
+        self.update_visualizations()
+
     def visualize_all(self):
         """Create complete visualization - Legacy method for compatibility"""
         print(f"\n[*] Creating {len(self.alignment.pis)} PI markers...")

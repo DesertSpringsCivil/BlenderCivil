@@ -149,7 +149,7 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
                 self._visualizer.create_segment_curve(last_segment)
         
         pi_count = len(self._alignment_obj.pis)
-        self.report({'INFO'}, f"✓ PI {pi_count} at ({location.x:.2f}, {location.y:.2f})")
+        self.report({'INFO'}, f"[+] PI {pi_count} at ({location.x:.2f}, {location.y:.2f})")
         
         print(f"[PI Tool] Added PI {pi_count} at ({location.x:.2f}, {location.y:.2f})")
         print(f"[PI Tool] Total segments: {len(self._alignment_obj.segments)}")
@@ -163,18 +163,18 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
         blf.position(font_id, 15, 80, 0)
         blf.size(font_id, 22)
         blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
-        blf.draw(font_id, "📍 Place Tangent Points (PIs)")
-        
+        blf.draw(font_id, "[PI] Place Tangent Points (PIs)")
+
         blf.position(font_id, 15, 55, 0)
         blf.size(font_id, 14)
         blf.color(font_id, 0.9, 0.9, 0.9, 1.0)
-        blf.draw(font_id, "🖱️  Left Click: Place PI (immediate!)")
-        
+        blf.draw(font_id, "Left Click: Place PI (immediate!)")
+
         blf.position(font_id, 15, 38, 0)
-        blf.draw(font_id, "✔ Enter / Right Click: Finish")
-        
+        blf.draw(font_id, "[OK] Enter / Right Click: Finish")
+
         blf.position(font_id, 15, 21, 0)
-        blf.draw(font_id, "✖ ESC: Cancel")
+        blf.draw(font_id, "[X] ESC: Cancel")
         
         # Show point count if any points placed
         if self._alignment_obj and len(self._alignment_obj.pis) > 0:
@@ -240,7 +240,7 @@ class BC_OT_add_pi_interactive(bpy.types.Operator):
             segment_count = len(self._alignment_obj.segments)
             
             if pi_count > 0:
-                self.report({'INFO'}, f"✅ Placed {pi_count} PIs, created {segment_count} tangent segments")
+                self.report({'INFO'}, f"[OK] Placed {pi_count} PIs, created {segment_count} tangent segments")
                 print(f"[PI Tool] Finished: {pi_count} PIs, {segment_count} segments in IFC")
             else:
                 self.report({'WARNING'}, "No PIs placed")

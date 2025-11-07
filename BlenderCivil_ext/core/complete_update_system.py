@@ -1,0 +1,430 @@
+"""
+BlenderCivil - Complete Alignment Update System (SIMPLIFIED)
+
+This is a complete, working implementation that:
+1. Detects when a PI moves
+2. Regenerates the ENTIRE alignment
+3. Updates the ENTIRE visualization
+
+NO complex dependency tracking - just regenerate everything.
+For alignments with <100 PIs, this is ~50ms and feels instant.
+"""
+
+import bpy
+from bpy.app.handlers import persistent
+from mathutils import Vector
+import time
+import math
+
+
+# =============================================================================
+# PART 1: ALIGNMENT REGISTRY
+# =============================================================================
+
+_alignment_registry = {}
+
+
+def register_alignment(alignment):
+    """Register an alignment for real-time updates."""
+    alignment_id = id(alignment)  # Use Python object ID
+    _alignment_registry[alignment_id] = alignment
+    print(f"✓ Registered alignment: {alignment.alignment.Name}")
+
+
+def unregister_alignment(alignment):
+    """Unregister an alignment."""
+    alignment_id = id(alignment)
+    if alignment_id in _alignment_registry:
+        del _alignment_registry[alignment_id]
+        print(f"✓ Unregistered alignment: {alignment.alignment.Name}")
+
+
+def get_alignment_from_pi(pi_object):
+    """Get alignment from PI object."""
+    if 'bc_alignment_id' not in pi_object:
+        return None
+
+    # Convert from string back to int (stored as string because Python int too large for C int)
+    alignment_id = int(pi_object['bc_alignment_id'])
+    return _alignment_registry.get(alignment_id)
+
+
+# =============================================================================
+# PART 2: UPDATE HANDLER
+# =============================================================================
+
+_last_update = {}
+_throttle_ms = 50  # 20 FPS minimum
+
+
+@persistent
+def blendercivil_update_handler(scene, depsgraph):
+    """
+    Detects PI movements and regenerates alignments.
+    
+    This is called by Blender whenever objects change.
+    """
+    current_time = time.time()
+    
+    for update in depsgraph.updates:
+        # Only care about transforms
+        if not update.is_updated_transform:
+            continue
+        
+        obj = update.id
+        
+        # Must be an Object
+        if not isinstance(obj, bpy.types.Object):
+            continue
+        
+        # Must be a BlenderCivil PI
+        if 'bc_pi_id' not in obj or 'bc_alignment_id' not in obj:
+            continue
+        
+        # Get the alignment
+        alignment = get_alignment_from_pi(obj)
+        if alignment is None:
+            continue
+        
+        # Check auto-update enabled
+        if not getattr(alignment, 'auto_update', True):
+            continue
+        
+        # Throttle updates
+        alignment_id = id(alignment)
+        last_time = _last_update.get(alignment_id, 0)
+        if (current_time - last_time) < (_throttle_ms / 1000.0):
+            continue
+        
+        _last_update[alignment_id] = current_time
+        
+        # === UPDATE THE ALIGNMENT ===
+        
+        # Update PI position from object
+        pi_id = obj['bc_pi_id']
+        if pi_id < len(alignment.pis):
+            pi = alignment.pis[pi_id]
+            
+            # Get new position
+            from .native_ifc_alignment import SimpleVector
+            new_pos = SimpleVector(obj.location.x, obj.location.y)
+            
+            # Check if actually moved
+            old_pos = pi['position']
+            if abs(new_pos.x - old_pos.x) < 0.001 and abs(new_pos.y - old_pos.y) < 0.001:
+                continue
+            
+            # Update position
+            pi['position'] = new_pos
+            if pi.get('ifc_point'):
+                pi['ifc_point'].Coordinates = [float(new_pos.x), float(new_pos.y)]
+            
+            # REGENERATE ENTIRE ALIGNMENT
+            alignment.regenerate_segments()
+            
+            # UPDATE VISUALIZATION
+            if hasattr(alignment, 'visualizer') and alignment.visualizer:
+                alignment.visualizer.update_all()
+
+
+def register_handler():
+    """Register the update handler with Blender."""
+    if blendercivil_update_handler not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(blendercivil_update_handler)
+        print("✓ BlenderCivil update handler REGISTERED")
+        return True
+    return False
+
+
+def unregister_handler():
+    """Unregister the update handler."""
+    if blendercivil_update_handler in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(blendercivil_update_handler)
+        print("✓ BlenderCivil update handler UNREGISTERED")
+        return True
+    return False
+
+
+# =============================================================================
+# PART 3: MANUAL UPDATE OPERATOR
+# =============================================================================
+
+class BLENDERCIVIL_OT_update_alignment(bpy.types.Operator):
+    """Manually update alignment from PI positions"""
+    bl_idname = "blendercivil.update_alignment"
+    bl_label = "Update Alignment"
+    bl_description = "Regenerate alignment from current PI positions"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        updated = 0
+        
+        for alignment in _alignment_registry.values():
+            # Update all PI positions from Blender
+            for pi in alignment.pis:
+                if pi.get('blender_object'):
+                    obj = pi['blender_object']
+                    from .native_ifc_alignment import SimpleVector
+                    pi['position'] = SimpleVector(obj.location.x, obj.location.y)
+                    if pi.get('ifc_point'):
+                        pi['ifc_point'].Coordinates = [
+                            float(pi['position'].x), 
+                            float(pi['position'].y)
+                        ]
+            
+            # Regenerate
+            alignment.regenerate_segments()
+            
+            # Visualize
+            if hasattr(alignment, 'visualizer') and alignment.visualizer:
+                alignment.visualizer.update_all()
+            
+            updated += 1
+        
+        self.report({'INFO'}, f"Updated {updated} alignment(s)")
+        return {'FINISHED'}
+
+
+class BLENDERCIVIL_OT_toggle_auto_update(bpy.types.Operator):
+    """Toggle auto-update on/off"""
+    bl_idname = "blendercivil.toggle_auto_update"
+    bl_label = "Toggle Auto-Update"
+    bl_description = "Toggle automatic alignment updates"
+    bl_options = {'REGISTER'}
+    
+    def execute(self, context):
+        if len(_alignment_registry) == 0:
+            self.report({'WARNING'}, "No alignments found")
+            return {'CANCELLED'}
+        
+        # Toggle first alignment (could be improved with selection)
+        alignment = list(_alignment_registry.values())[0]
+        alignment.auto_update = not getattr(alignment, 'auto_update', True)
+        
+        state = "enabled" if alignment.auto_update else "disabled"
+        self.report({'INFO'}, f"Auto-update {state}")
+        
+        return {'FINISHED'}
+
+
+# =============================================================================
+# PART 4: ENHANCED VISUALIZER
+# =============================================================================
+
+class AlignmentVisualizer:
+    """
+    Creates and updates Blender objects for alignment visualization.
+    
+    CRITICAL: This sets the properties that the update handler needs!
+    """
+    
+    def __init__(self, alignment):
+        self.alignment = alignment
+        self.collection = None
+        self.pi_objects = []
+        self.segment_curves = []
+        
+        # Create collection
+        self._create_collection()
+    
+    def _create_collection(self):
+        """Create or get the collection for this alignment."""
+        coll_name = f"Alignment_{self.alignment.name}"
+        
+        if coll_name in bpy.data.collections:
+            self.collection = bpy.data.collections[coll_name]
+        else:
+            self.collection = bpy.data.collections.new(coll_name)
+            bpy.context.scene.collection.children.link(self.collection)
+    
+    def create_pi_object(self, pi_data):
+        """
+        Create PI marker with CRITICAL properties.
+        
+        The update handler needs these properties:
+        - bc_pi_id: Index of the PI
+        - bc_alignment_id: ID of the alignment
+        """
+        pi_id = pi_data['id']
+        obj = bpy.data.objects.new(f"PI_{pi_id:03d}", None)
+        obj.empty_display_type = 'SPHERE'
+        obj.empty_display_size = 3.0
+        
+        pos = pi_data['position']
+        obj.location = Vector((pos.x, pos.y, 0))
+        
+        # CRITICAL: Set these custom properties!
+        obj['bc_pi_id'] = pi_id
+        obj['bc_alignment_id'] = id(self.alignment)
+        
+        # Color
+        obj.color = (0.0, 1.0, 0.0, 1.0)
+        
+        # Link to collection
+        self.collection.objects.link(obj)
+        self.pi_objects.append(obj)
+        
+        # CRITICAL: Store reference in PI data!
+        pi_data['blender_object'] = obj
+        
+        return obj
+    
+    def create_all_pi_objects(self):
+        """Create markers for all PIs."""
+        for pi in self.alignment.pis:
+            if pi.get('blender_object') is None:
+                self.create_pi_object(pi)
+    
+    def update_all(self):
+        """Update entire visualization."""
+        self.update_segment_curves()
+        self.update_pi_markers()
+    
+    def update_segment_curves(self):
+        """Recreate all segment curves."""
+        # Remove old curves
+        for curve_obj in self.segment_curves:
+            if curve_obj.name in bpy.data.objects:
+                bpy.data.objects.remove(curve_obj, do_unlink=True)
+        self.segment_curves = []
+        
+        # Create new curves
+        for segment in self.alignment.segments:
+            curve_obj = self._create_segment_curve(segment)
+            if curve_obj:
+                self.segment_curves.append(curve_obj)
+    
+    def _create_segment_curve(self, segment):
+        """Create Blender curve for a segment."""
+        curve_data = bpy.data.curves.new(f"Seg_{segment['id']:03d}", 'CURVE')
+        curve_data.dimensions = '3D'
+        
+        if segment['type'] == 'LINE':
+            # Tangent line
+            spline = curve_data.splines.new('POLY')
+            spline.points.add(1)
+            
+            start = segment['start']
+            end = segment['end']
+            
+            spline.points[0].co = (start.x, start.y, 0, 1)
+            spline.points[1].co = (end.x, end.y, 0, 1)
+            
+            color = (0.0, 0.5, 1.0, 1.0)  # Blue
+            
+        elif segment['type'] == 'CIRCULARARC':
+            # Circular curve
+            center = segment['center']
+            radius = segment['radius']
+            bc = segment['start']
+            ec = segment['end']
+            
+            # Calculate angles
+            start_angle = math.atan2(bc.y - center.y, bc.x - center.x)
+            end_angle = math.atan2(ec.y - center.y, ec.x - center.x)
+            
+            # Determine arc direction
+            angle_diff = end_angle - start_angle
+            if angle_diff > math.pi:
+                angle_diff -= 2 * math.pi
+            elif angle_diff < -math.pi:
+                angle_diff += 2 * math.pi
+            
+            # Create points along arc
+            num_points = max(8, int(abs(angle_diff) * radius / 5))  # Point every 5m
+            
+            spline = curve_data.splines.new('POLY')
+            spline.points.add(num_points - 1)
+            
+            for i in range(num_points):
+                t = i / (num_points - 1)
+                angle = start_angle + t * angle_diff
+                x = center.x + radius * math.cos(angle)
+                y = center.y + radius * math.sin(angle)
+                spline.points[i].co = (x, y, 0, 1)
+            
+            color = (1.0, 0.0, 0.0, 1.0)  # Red
+        
+        else:
+            return None
+        
+        # Create object
+        obj = bpy.data.objects.new(f"Seg_{segment['id']:03d}", curve_data)
+        obj.color = color
+        self.collection.objects.link(obj)
+        
+        return obj
+    
+    def update_pi_markers(self):
+        """Update PI marker positions."""
+        for pi_data in self.alignment.pis:
+            if pi_data.get('blender_object'):
+                obj = pi_data['blender_object']
+                pos = pi_data['position']
+                obj.location = (pos.x, pos.y, 0)
+
+
+# =============================================================================
+# PART 5: REGISTRATION
+# =============================================================================
+
+classes = (
+    BLENDERCIVIL_OT_update_alignment,
+    BLENDERCIVIL_OT_toggle_auto_update,
+)
+
+
+def register():
+    """Register operators and handler."""
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    
+    register_handler()
+    print("✓ BlenderCivil update system registered")
+
+
+def unregister():
+    """Unregister everything."""
+    unregister_handler()
+    
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+    
+    print("✓ BlenderCivil update system unregistered")
+
+
+# =============================================================================
+# TESTING & DEBUGGING
+# =============================================================================
+
+def test_system():
+    """Test the update system."""
+    print("\n=== BlenderCivil Update System Test ===")
+    
+    # Check handler
+    print(f"Handler registered: {blendercivil_update_handler in bpy.app.handlers.depsgraph_update_post}")
+    
+    # Check alignments
+    print(f"Registered alignments: {len(_alignment_registry)}")
+    for align_id, alignment in _alignment_registry.items():
+        print(f"  - {alignment.name}: {len(alignment.pis)} PIs, {len(alignment.segments)} segments")
+    
+    # Check PIs
+    if len(_alignment_registry) > 0:
+        alignment = list(_alignment_registry.values())[0]
+        print(f"\nChecking PIs in '{alignment.name}':")
+        for pi in alignment.pis:
+            obj = pi.get('blender_object')
+            if obj:
+                has_pi_id = 'bc_pi_id' in obj
+                has_align_id = 'bc_alignment_id' in obj
+                print(f"  PI {pi['id']}: Object={obj.name}, bc_pi_id={has_pi_id}, bc_alignment_id={has_align_id}")
+            else:
+                print(f"  PI {pi['id']}: No Blender object!")
+    
+    print("=" * 40 + "\n")
+
+
+if __name__ == "__main__":
+    print("BlenderCivil Update System")
+    print("Import this module in your addon")

@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(sed:*)",
+      "Bash(python -m py_compile:*)"
     ],
     "deny": [],
     "ask": []
