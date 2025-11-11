@@ -19,6 +19,7 @@ try:
 
     # Import IFC-dependent modules
     from . import native_ifc_manager
+    from . import ifc_relationship_manager
     from . import native_ifc_alignment
     from . import native_ifc_vertical_alignment
     from . import native_ifc_cross_section
@@ -31,6 +32,7 @@ try:
 
     _ifc_modules = [
         native_ifc_manager,
+        ifc_relationship_manager,
         native_ifc_alignment,
         native_ifc_vertical_alignment,
         native_ifc_cross_section,

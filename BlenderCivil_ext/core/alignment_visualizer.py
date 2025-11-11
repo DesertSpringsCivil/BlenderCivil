@@ -58,9 +58,51 @@ class AlignmentVisualizer:
                 print(f"[Visualizer] Created alignment empty: {alignment_empty_name}")
         else:
             print(f"[Visualizer] Warning: No Alignments parent found")
-    
+
+    def _ensure_valid_collection(self):
+        """
+        Ensure visualizer has a valid collection reference.
+        If collection was deleted, get a new one.
+
+        This fixes the "StructRNA of type Collection has been removed" error
+        that occurs when the update system tries to create objects after the
+        collection was deleted.
+
+        Returns:
+            bool: True if valid collection exists, False otherwise
+        """
+        from .native_ifc_manager import NativeIfcManager
+
+        # Check if current collection is still valid
+        try:
+            if self.collection and self.collection.name in bpy.data.collections:
+                # Collection is still valid
+                return True
+        except (ReferenceError, AttributeError):
+            # Collection reference is dead
+            pass
+
+        # Collection is invalid or missing - get a new one
+        print("[Visualizer] Collection reference invalid, refreshing...")
+
+        self.collection = NativeIfcManager.get_project_collection()
+        if not self.collection:
+            # Fallback to scene collection
+            self.collection = bpy.context.scene.collection
+            print("[Visualizer] Using scene collection as fallback")
+        else:
+            print(f"[Visualizer] Refreshed to collection: {self.collection.name}")
+
+        return self.collection is not None
+
     def create_pi_object(self, pi_data):
         """Create Blender Empty for PI - Always GREEN (no radius!)"""
+
+        # CRITICAL: Ensure valid collection before creating objects!
+        if not self._ensure_valid_collection():
+            print("[Visualizer] ERROR: No valid collection available!")
+            return None
+
         obj = bpy.data.objects.new(f"PI_{pi_data['id']:03d}", None)
         obj.empty_display_type = 'SPHERE'
         obj.empty_display_size = 3.0
@@ -98,7 +140,12 @@ class AlignmentVisualizer:
     def create_segment_curve(self, ifc_segment):
         """Create Blender curve for IFC segment"""
         from .native_ifc_manager import NativeIfcManager
-        
+
+        # CRITICAL: Ensure valid collection before creating objects!
+        if not self._ensure_valid_collection():
+            print("[Visualizer] ERROR: No valid collection available!")
+            return None
+
         params = ifc_segment.DesignParameters
         
         # Create curve data
