@@ -138,7 +138,13 @@ def blendercivil_update_handler(scene, depsgraph):
                     pi['ifc_point'].Coordinates = [float(new_pos.x), float(new_pos.y)]
 
                 # REGENERATE ENTIRE ALIGNMENT
-                alignment.regenerate_segments()
+                # Check if any PI has curve data - if so, use regenerate_segments_with_curves()
+                has_curves = any('curve' in pi for pi in alignment.pis)
+
+                if has_curves:
+                    alignment.regenerate_segments_with_curves()
+                else:
+                    alignment.regenerate_segments()
 
                 # UPDATE VISUALIZATION
                 if hasattr(alignment, 'visualizer') and alignment.visualizer:
@@ -189,7 +195,7 @@ class BLENDERCIVIL_OT_update_alignment(bpy.types.Operator):
     
     def execute(self, context):
         updated = 0
-        
+
         for alignment in _alignment_registry.values():
             # Update all PI positions from Blender
             for pi in alignment.pis:
@@ -199,19 +205,23 @@ class BLENDERCIVIL_OT_update_alignment(bpy.types.Operator):
                     pi['position'] = SimpleVector(obj.location.x, obj.location.y)
                     if pi.get('ifc_point'):
                         pi['ifc_point'].Coordinates = [
-                            float(pi['position'].x), 
+                            float(pi['position'].x),
                             float(pi['position'].y)
                         ]
-            
-            # Regenerate
-            alignment.regenerate_segments()
-            
+
+            # Regenerate (with curves if present)
+            has_curves = any('curve' in pi for pi in alignment.pis)
+            if has_curves:
+                alignment.regenerate_segments_with_curves()
+            else:
+                alignment.regenerate_segments()
+
             # Visualize
             if hasattr(alignment, 'visualizer') and alignment.visualizer:
                 alignment.visualizer.update_all()
-            
+
             updated += 1
-        
+
         self.report({'INFO'}, f"Updated {updated} alignment(s)")
         return {'FINISHED'}
 

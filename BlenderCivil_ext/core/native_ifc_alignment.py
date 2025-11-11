@@ -190,47 +190,46 @@ class NativeIfcAlignment:
     
     def regenerate_segments_with_curves(self):
         """Regenerate segments considering curves at PIs
-        
+
         This creates: Tangent → Curve → Tangent → Curve → Tangent
         where curves exist at PIs that have curve data.
         """
         self.segments = []
-        
+
         if len(self.pis) < 2:
             return
-        
+
         for i in range(len(self.pis) - 1):
             curr_pi = self.pis[i]
             next_pi = self.pis[i + 1]
-            
+
             # Determine tangent start
-            if i == 0:
-                start_pos = curr_pi['position']
+            # If curr_pi has a curve, the previous tangent ended at BC,
+            # and the curve went from BC to EC, so this tangent starts at EC
+            if 'curve' in curr_pi:
+                start_pos = curr_pi['curve']['ec']
             else:
-                # If previous PI has curve, start at EC
-                if 'curve' in self.pis[i - 1]:
-                    start_pos = self.pis[i - 1]['curve']['ec']
-                else:
-                    start_pos = curr_pi['position']
-            
+                start_pos = curr_pi['position']
+
             # Determine tangent end
-            if 'curve' in curr_pi and i + 1 < len(self.pis):
-                # PI has curve, end at BC
-                end_pos = curr_pi['curve']['bc']
+            # If next_pi has a curve, this tangent should end at BC (before the PI)
+            if 'curve' in next_pi:
+                end_pos = next_pi['curve']['bc']
             else:
                 end_pos = next_pi['position']
-            
+
             # Create tangent segment
             tangent = self._create_tangent_segment(start_pos, end_pos)
             self.segments.append(tangent)
-            
-            # Add curve if present at current PI
-            if 'curve' in curr_pi and i + 1 < len(self.pis):
-                curve = self._create_curve_segment(curr_pi['curve'], curr_pi['id'])
+
+            # Add curve at next PI if it exists
+            # The curve goes from BC to EC around next_pi
+            if 'curve' in next_pi:
+                curve = self._create_curve_segment(next_pi['curve'], next_pi['id'])
                 self.segments.append(curve)
-        
+
         self._update_ifc_nesting()
-        
+
         print(f"[Alignment] Regenerated {len(self.segments)} segments with curves")
     
     def _create_curve_segment(self, curve_data, pi_id=None):

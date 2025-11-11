@@ -383,9 +383,9 @@ class BC_OT_add_curve_dialog(bpy.types.Operator):
         layout.prop(self, "radius")
 
     def create_curve(self, tangent1, tangent2, radius):
-        """Create curve between two tangents"""
-        # TODO: Full implementation
-        # For now, create a simple visualization of the curve
+        """Create curve between two tangents by integrating with alignment system"""
+        import bpy
+        import math
 
         # Extract segment numbers from tangent names
         try:
@@ -395,46 +395,53 @@ class BC_OT_add_curve_dialog(bpy.types.Operator):
             print(f"[CurveTool] Could not parse segment numbers from tangent names")
             return False
 
-        # For now, just create a simple curve object as a placeholder
-        # In full implementation, this would:
-        # 1. Get the alignment that owns these tangents
-        # 2. Calculate the PI index between the tangents
-        # 3. Call alignment.insert_curve_at_pi(pi_index, radius)
-        # 4. Update the visualizer
+        # The PI index is the shared PI between the two tangents
+        # Tangent_0 goes from PI_0 to PI_1, Tangent_1 goes from PI_1 to PI_2
+        # So if we have Tangent_0 and Tangent_1, the shared PI is PI_1
+        pi_index = max(seg1_num, seg2_num)
 
-        import bpy
+        # Get the alignment object from the registry
+        from ..core.native_ifc_manager import NativeIfcManager
+        from ..core import alignment_registry
+        from ..ui.alignment_properties import get_active_alignment_ifc
 
-        # Create a simple curve for visualization
-        curve_data = bpy.data.curves.new(f"Curve_{min(seg1_num, seg2_num)}", 'CURVE')
-        curve_data.dimensions = '3D'
+        # Get the active alignment IFC entity
+        ifc = NativeIfcManager.get_file()
+        if not ifc:
+            print(f"[CurveTool] No IFC file loaded")
+            return False
 
-        # Create a simple arc placeholder
-        spline = curve_data.splines.new('POLY')
-        spline.points.add(10)  # 11 points total
+        active_alignment_ifc = get_active_alignment_ifc(bpy.context)
+        if not active_alignment_ifc:
+            print(f"[CurveTool] No active alignment")
+            return False
 
-        # Get tangent endpoints to position the arc
-        if tangent1.type == 'CURVE' and tangent1.data.splines:
-            t1_points = tangent1.data.splines[0].points
-            if len(t1_points) >= 2:
-                end_point = t1_points[-1].co
+        # Get the alignment object from registry
+        alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+        if not alignment_obj:
+            print(f"[CurveTool] Could not find alignment object in registry")
+            return False
 
-                # Create simple arc at tangent end
-                import math
-                for i in range(11):
-                    angle = (i / 10.0) * (math.pi / 4)  # 45 degree arc
-                    x = end_point[0] + radius * math.cos(angle)
-                    y = end_point[1] + radius * math.sin(angle)
-                    spline.points[i].co = (x, y, 0, 1)
+        # Insert curve at PI using the alignment's built-in method
+        print(f"[CurveTool] Inserting curve at PI {pi_index} with radius {radius:.1f}m")
 
-        # Create object
-        curve_obj = bpy.data.objects.new(f"Curve_{min(seg1_num, seg2_num)}", curve_data)
-        curve_obj.color = (1.0, 0.0, 0.0, 1.0)  # Red for curves
+        curve_data = alignment_obj.insert_curve_at_pi(pi_index, radius)
 
-        # Add to scene
-        bpy.context.scene.collection.objects.link(curve_obj)
+        if not curve_data:
+            print(f"[CurveTool] Failed to insert curve at PI {pi_index}")
+            return False
 
-        print(f"[CurveTool] Created placeholder curve visualization")
-        print(f"[CurveTool] TODO: Integrate with alignment.insert_curve_at_pi()")
+        # The alignment has updated its segments, now update visualization
+        if hasattr(alignment_obj, 'visualizer') and alignment_obj.visualizer:
+            alignment_obj.visualizer.update_all()
+            print(f"[CurveTool] Updated visualization")
+
+        print(f"[CurveTool] Successfully inserted curve:")
+        print(f"[CurveTool]   PI Index: {pi_index}")
+        print(f"[CurveTool]   Radius: {radius:.1f}m")
+        print(f"[CurveTool]   Arc Length: {curve_data['arc_length']:.2f}m")
+        print(f"[CurveTool]   Deflection: {math.degrees(curve_data['deflection']):.1f}°")
+        print(f"[CurveTool]   Turn: {curve_data['turn_direction']}")
 
         return True
 

@@ -297,6 +297,17 @@ class AlignmentVisualizer:
             # Update curve geometry data in-place
             try:
                 params = segment.DesignParameters
+
+                # CRITICAL: Update object name to match IFC segment name
+                if seg_obj.name != segment.Name:
+                    seg_obj.name = segment.Name
+
+                # Also update color based on type
+                if params.PredefinedType == "LINE":
+                    seg_obj.color = (0.2, 0.6, 1.0, 1.0)  # Blue for tangents
+                elif params.PredefinedType == "CIRCULARARC":
+                    seg_obj.color = (1.0, 0.3, 0.3, 1.0)  # Red for curves
+
                 curve_data = seg_obj.data
 
                 # Clear existing splines
@@ -320,13 +331,13 @@ class AlignmentVisualizer:
                 elif params.PredefinedType == "CIRCULARARC":
                     # Circular arc
                     start = params.StartPoint.Coordinates
-                    radius = abs(params.SegmentStart.Horizontal.RadiusOfCurvature)
+                    radius = abs(params.StartRadiusOfCurvature)  # FIXED: Use StartRadiusOfCurvature directly
                     angle_start = params.StartDirection
                     length = params.SegmentLength
 
                     # Calculate arc parameters
                     angle_subtended = length / radius
-                    is_ccw = params.SegmentStart.Horizontal.RadiusOfCurvature > 0
+                    is_ccw = params.StartRadiusOfCurvature > 0  # FIXED: Use StartRadiusOfCurvature directly
 
                     if not is_ccw:
                         angle_subtended = -angle_subtended
