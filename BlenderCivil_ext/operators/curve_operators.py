@@ -37,10 +37,12 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
     _finished = False  # Flag to track if operator has completed
     
     def modal(self, context, event):
-        # If operator has finished (dialog completed), exit cleanly
+        # CRITICAL: Check finished flag FIRST, before any context access
         if self._finished:
+            # Don't access context or do anything - just exit immediately
             return {'FINISHED'}
 
+        # Safe to access context now
         context.area.tag_redraw()
 
         # Track mouse position and highlight hovered objects
@@ -71,15 +73,23 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
                         self._second_tangent = obj
                         # Check if tangents are adjacent
                         if self.are_tangents_adjacent(self._first_tangent, self._second_tangent):
-                            # Remove draw handler BEFORE showing dialog (prevents crash)
+                            # CRITICAL: End modal operator BEFORE dialog
+                            # Store tangent info in scene for the dialog operator to use
+                            context.scene["bc_curve_tangent1"] = self._first_tangent.name
+                            context.scene["bc_curve_tangent2"] = self._second_tangent.name
+
+                            # Clean up modal operator
                             if self._handle:
                                 bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
                                 self._handle = None
+
+                            # Exit modal cleanly
+                            self._finished = True
                             context.area.tag_redraw()
-                            # Set flag to prevent cancel() from running
-                            self._dialog_active = True
-                            # Show radius dialog
-                            return context.window_manager.invoke_props_dialog(self, width=300)
+
+                            # Invoke the SEPARATE dialog operator
+                            bpy.ops.bc.add_curve_dialog('INVOKE_DEFAULT')
+                            return {'FINISHED'}
                         else:
                             self.report({'ERROR'}, "Tangents must be adjacent (share a PI)")
                             self._second_tangent = None
@@ -136,67 +146,6 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
         self.report({'INFO'}, f"Add Curve Mode [{align_name}] - Click first tangent segment")
         return {'RUNNING_MODAL'}
     
-    def draw(self, context):
-        """Draw the radius input dialog"""
-        layout = self.layout
-        layout.label(text=f"Insert curve between:")
-
-        # Safely get tangent names
-        try:
-            first_name = self._first_tangent.name if self._first_tangent else "Unknown"
-            second_name = self._second_tangent.name if self._second_tangent else "Unknown"
-        except (AttributeError, ReferenceError):
-            first_name = "Unknown"
-            second_name = "Unknown"
-
-        layout.label(text=f"  • {first_name}")
-        layout.label(text=f"  • {second_name}")
-        layout.separator()
-        layout.prop(self, "radius")
-    
-    def execute(self, context):
-        """Called when OK is clicked in the radius dialog"""
-        # Reset dialog flag
-        self._dialog_active = False
-
-        # Validate that we still have valid tangent references
-        if not self._first_tangent or not self._second_tangent:
-            self.report({'ERROR'}, "Tangent references lost")
-            return {'CANCELLED'}
-
-        # Validate tangent objects still exist in scene
-        try:
-            if self._first_tangent.name not in bpy.data.objects:
-                self.report({'ERROR'}, "First tangent no longer exists")
-                return {'CANCELLED'}
-            if self._second_tangent.name not in bpy.data.objects:
-                self.report({'ERROR'}, "Second tangent no longer exists")
-                return {'CANCELLED'}
-        except (AttributeError, ReferenceError):
-            self.report({'ERROR'}, "Invalid tangent object reference")
-            return {'CANCELLED'}
-
-        # Create the curve
-        success = self.create_curve(self._first_tangent, self._second_tangent, self.radius)
-
-        if success:
-            self.report({'INFO'}, f"[OK] Created curve with R={self.radius:.1f}m")
-        else:
-            self.report({'ERROR'}, "Failed to create curve")
-
-        # Set finished flag so modal() exits on next call
-        self._finished = True
-
-        # Clean up draw handler (already removed before dialog, but be safe)
-        if self._handle:
-            try:
-                bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-            except:
-                pass  # Already removed
-            self._handle = None
-
-        context.area.tag_redraw()
-        return {'FINISHED'}
     
     def get_object_under_mouse(self, context, event):
         """Get object under mouse cursor using ray casting"""
@@ -257,28 +206,14 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
             # Fallback: check spatial proximity of endpoints
             return True  # Allow for now
     
-    def create_curve(self, tangent1, tangent2, radius):
-        """Create curve between two tangents"""
-        # TODO INTEGRATION:
-        # 1. Get the shared PI between the two tangents
-        # 2. Calculate curve geometry (BC, EC, arc length, etc.)
-        # 3. Create IFC curve segment
-        # 4. Trim tangent1 at BC
-        # 5. Trim tangent2 at EC
-        # 6. Visualize the curve
-        
-        # from . import NativeIfcManager, NativeIfcAlignment
-        # alignment = get_active_alignment()
-        # curve_data = alignment.insert_curve_at_pi(pi_index, radius)
-        # visualizer.create_curve_segment(curve_data)
-        
-        return True  # Placeholder
-    
     def draw_callback_px(self, operator, context):
         """Draw on-screen instructions and visual feedback"""
-        
+        # CRITICAL: If finished or handler removed, don't draw anything
+        if self._finished or self._handle is None:
+            return
+
         font_id = 0
-        
+
         # Draw instructions based on state
         blf.position(font_id, 15, 80, 0)
         blf.size(font_id, 22)
@@ -295,19 +230,29 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
             blf.draw(font_id, "Click SECOND tangent segment")
             blf.position(font_id, 15, 38, 0)
             blf.color(font_id, 0.3, 1.0, 0.4, 1.0)
-            blf.draw(font_id, f"[+] First: {self._first_tangent.name}")
-        
+            # Safely get tangent name
+            try:
+                tangent_name = self._first_tangent.name if self._first_tangent else "Unknown"
+            except (AttributeError, ReferenceError):
+                tangent_name = "Unknown"
+            blf.draw(font_id, f"[+] First: {tangent_name}")
+
         blf.position(font_id, 15, 21, 0)
         blf.color(font_id, 0.9, 0.9, 0.9, 1.0)
         blf.draw(font_id, "[X] ESC: Cancel")
-        
+
         # Highlight hovered object
         if self._hovered_object and self.is_tangent_segment(self._hovered_object):
             # Draw highlight indicator
             blf.position(font_id, context.region.width - 250, 45, 0)
             blf.size(font_id, 16)
             blf.color(font_id, 1.0, 1.0, 0.0, 1.0)
-            blf.draw(font_id, f"[>>] Hover: {self._hovered_object.name}")
+            # Safely get hovered object name
+            try:
+                hover_name = self._hovered_object.name
+            except (AttributeError, ReferenceError):
+                hover_name = "Unknown"
+            blf.draw(font_id, f"[>>] Hover: {hover_name}")
         
         # Draw cursor - different color for curve tool (orange)
         if self._last_mouse_pos:
@@ -365,6 +310,133 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
 
         self.report({'INFO'}, "Curve addition cancelled")
         context.area.tag_redraw()
+
+
+class BC_OT_add_curve_dialog(bpy.types.Operator):
+    """Dialog for entering curve radius (separated from modal)"""
+    bl_idname = "bc.add_curve_dialog"
+    bl_label = "Add Curve"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    radius: FloatProperty(
+        name="Radius",
+        default=100.0,
+        min=0.1,
+        description="Curve radius in meters"
+    )
+
+    def execute(self, context):
+        """Create curve with specified radius"""
+        # Get tangent names from scene
+        tangent1_name = context.scene.get("bc_curve_tangent1")
+        tangent2_name = context.scene.get("bc_curve_tangent2")
+
+        if not tangent1_name or not tangent2_name:
+            self.report({'ERROR'}, "Tangent references lost")
+            return {'CANCELLED'}
+
+        # Get tangent objects
+        tangent1 = bpy.data.objects.get(tangent1_name)
+        tangent2 = bpy.data.objects.get(tangent2_name)
+
+        if not tangent1 or not tangent2:
+            self.report({'ERROR'}, "Tangent objects no longer exist")
+            return {'CANCELLED'}
+
+        # Create the curve
+        try:
+            success = self.create_curve(tangent1, tangent2, self.radius)
+
+            if success:
+                self.report({'INFO'}, f"[OK] Created curve with R={self.radius:.1f}m")
+            else:
+                self.report({'ERROR'}, "Failed to create curve")
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to create curve: {e}")
+            print(f"[CurveTool] Error in create_curve: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Clean up scene properties
+        if "bc_curve_tangent1" in context.scene:
+            del context.scene["bc_curve_tangent1"]
+        if "bc_curve_tangent2" in context.scene:
+            del context.scene["bc_curve_tangent2"]
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        """Show dialog"""
+        return context.window_manager.invoke_props_dialog(self, width=300)
+
+    def draw(self, context):
+        """Draw dialog UI"""
+        layout = self.layout
+
+        tangent1_name = context.scene.get("bc_curve_tangent1", "Unknown")
+        tangent2_name = context.scene.get("bc_curve_tangent2", "Unknown")
+
+        layout.label(text=f"Insert curve between:")
+        layout.label(text=f"  • {tangent1_name}")
+        layout.label(text=f"  • {tangent2_name}")
+        layout.separator()
+        layout.prop(self, "radius")
+
+    def create_curve(self, tangent1, tangent2, radius):
+        """Create curve between two tangents"""
+        # TODO: Full implementation
+        # For now, create a simple visualization of the curve
+
+        # Extract segment numbers from tangent names
+        try:
+            seg1_num = int(tangent1.name.split('_')[-1])
+            seg2_num = int(tangent2.name.split('_')[-1])
+        except:
+            print(f"[CurveTool] Could not parse segment numbers from tangent names")
+            return False
+
+        # For now, just create a simple curve object as a placeholder
+        # In full implementation, this would:
+        # 1. Get the alignment that owns these tangents
+        # 2. Calculate the PI index between the tangents
+        # 3. Call alignment.insert_curve_at_pi(pi_index, radius)
+        # 4. Update the visualizer
+
+        import bpy
+
+        # Create a simple curve for visualization
+        curve_data = bpy.data.curves.new(f"Curve_{min(seg1_num, seg2_num)}", 'CURVE')
+        curve_data.dimensions = '3D'
+
+        # Create a simple arc placeholder
+        spline = curve_data.splines.new('POLY')
+        spline.points.add(10)  # 11 points total
+
+        # Get tangent endpoints to position the arc
+        if tangent1.type == 'CURVE' and tangent1.data.splines:
+            t1_points = tangent1.data.splines[0].points
+            if len(t1_points) >= 2:
+                end_point = t1_points[-1].co
+
+                # Create simple arc at tangent end
+                import math
+                for i in range(11):
+                    angle = (i / 10.0) * (math.pi / 4)  # 45 degree arc
+                    x = end_point[0] + radius * math.cos(angle)
+                    y = end_point[1] + radius * math.sin(angle)
+                    spline.points[i].co = (x, y, 0, 1)
+
+        # Create object
+        curve_obj = bpy.data.objects.new(f"Curve_{min(seg1_num, seg2_num)}", curve_data)
+        curve_obj.color = (1.0, 0.0, 0.0, 1.0)  # Red for curves
+
+        # Add to scene
+        bpy.context.scene.collection.objects.link(curve_obj)
+
+        print(f"[CurveTool] Created placeholder curve visualization")
+        print(f"[CurveTool] TODO: Integrate with alignment.insert_curve_at_pi()")
+
+        return True
 
 
 class BC_OT_delete_curve(bpy.types.Operator):
@@ -436,6 +508,7 @@ class BC_OT_edit_curve_radius(bpy.types.Operator):
 # Registration
 classes = (
     BC_OT_add_curve_interactive,
+    BC_OT_add_curve_dialog,
     BC_OT_delete_curve,
     BC_OT_edit_curve_radius,
 )
