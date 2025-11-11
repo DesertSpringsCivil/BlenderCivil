@@ -233,32 +233,139 @@ class AlignmentVisualizer:
         """Clear all existing visualizations"""
         # Remove all objects in collection
         for obj in self.pi_objects + self.segment_objects:
-            if obj and obj.name in bpy.data.objects:
-                bpy.data.objects.remove(obj, do_unlink=True)
-        
+            try:
+                if obj and obj.name in bpy.data.objects:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+            except (ReferenceError, AttributeError, RuntimeError):
+                # Object already deleted or invalid - skip it
+                pass
+
         self.pi_objects.clear()
         self.segment_objects.clear()
-        
+
         print(f"[Visualizer] Cleared visualizations")
     
     def update_visualizations(self):
         """Update all visualizations from current alignment state"""
         # Clear existing
         self.clear_visualizations()
-        
+
         # Recreate all PIs
         for pi_data in self.alignment.pis:
-            self.create_pi_object(pi_data)
-        
+            try:
+                self.create_pi_object(pi_data)
+            except Exception as e:
+                print(f"[Visualizer] Error creating PI {pi_data.get('id', '?')}: {e}")
+
         # Recreate all segments
         for segment in self.alignment.segments:
-            self.create_segment_curve(segment)
-        
+            try:
+                self.create_segment_curve(segment)
+            except Exception as e:
+                print(f"[Visualizer] Error creating segment: {e}")
+
         print(f"[Visualizer] Updated: {len(self.pi_objects)} PIs, {len(self.segment_objects)} segments")
+
+    def update_segments_in_place(self):
+        """
+        Update segment curves in-place without deleting/recreating objects.
+        Safe to call during modal operations (like G for grab/move).
+        Works alongside BlenderBIM without conflicts.
+        """
+        import math
+
+        # Only update existing segments - don't delete/recreate
+        for i, segment in enumerate(self.alignment.segments):
+            if i >= len(self.segment_objects):
+                # Need more segment objects - create them
+                try:
+                    self.create_segment_curve(segment)
+                except Exception as e:
+                    print(f"[Visualizer] Error creating new segment: {e}")
+                continue
+
+            # Get existing segment object
+            seg_obj = self.segment_objects[i]
+
+            # Safety check
+            try:
+                if not seg_obj or seg_obj.name not in bpy.data.objects:
+                    continue
+            except (ReferenceError, AttributeError):
+                continue
+
+            # Update curve geometry data in-place
+            try:
+                params = segment.DesignParameters
+                curve_data = seg_obj.data
+
+                # Clear existing splines
+                curve_data.splines.clear()
+
+                # Recreate geometry based on type
+                if params.PredefinedType == "LINE":
+                    # Tangent line
+                    spline = curve_data.splines.new('POLY')
+                    spline.points.add(1)  # Total 2 points
+
+                    start = params.StartPoint.Coordinates
+                    spline.points[0].co = (start[0], start[1], 0, 1)
+
+                    length = params.SegmentLength
+                    angle = params.StartDirection
+                    end_x = start[0] + length * math.cos(angle)
+                    end_y = start[1] + length * math.sin(angle)
+                    spline.points[1].co = (end_x, end_y, 0, 1)
+
+                elif params.PredefinedType == "CIRCULARARC":
+                    # Circular arc
+                    start = params.StartPoint.Coordinates
+                    radius = abs(params.SegmentStart.Horizontal.RadiusOfCurvature)
+                    angle_start = params.StartDirection
+                    length = params.SegmentLength
+
+                    # Calculate arc parameters
+                    angle_subtended = length / radius
+                    is_ccw = params.SegmentStart.Horizontal.RadiusOfCurvature > 0
+
+                    if not is_ccw:
+                        angle_subtended = -angle_subtended
+
+                    # Center point
+                    center_angle = angle_start + (math.pi / 2 if is_ccw else -math.pi / 2)
+                    center_x = start[0] + radius * math.cos(center_angle)
+                    center_y = start[1] + radius * math.sin(center_angle)
+
+                    # Create arc points
+                    num_points = max(8, int(abs(angle_subtended) * radius / 5))
+                    spline = curve_data.splines.new('POLY')
+                    spline.points.add(num_points - 1)
+
+                    for j in range(num_points):
+                        t = j / (num_points - 1)
+                        angle = angle_start + t * angle_subtended - (math.pi / 2 if is_ccw else -math.pi / 2)
+                        x = center_x + radius * math.cos(angle)
+                        y = center_y + radius * math.sin(angle)
+                        spline.points[j].co = (x, y, 0, 1)
+
+            except Exception as e:
+                print(f"[Visualizer] Error updating segment {i} geometry: {e}")
+
+        # Remove extra segment objects if alignment has fewer segments now
+        while len(self.segment_objects) > len(self.alignment.segments):
+            extra_obj = self.segment_objects.pop()
+            try:
+                if extra_obj and extra_obj.name in bpy.data.objects:
+                    bpy.data.objects.remove(extra_obj, do_unlink=True)
+            except:
+                pass
+
+        print(f"[Visualizer] Updated {len(self.segment_objects)} segments in-place")
 
     def update_all(self):
         """Update entire visualization - Required by complete_update_system"""
-        self.update_visualizations()
+        # Use in-place updates to avoid conflicts with modal operators
+        self.update_segments_in_place()
 
     def visualize_all(self):
         """Create complete visualization - Legacy method for compatibility"""

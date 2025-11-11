@@ -34,10 +34,15 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
     _hovered_object = None
     _state = "SELECT_FIRST"  # States: SELECT_FIRST, SELECT_SECOND, ENTER_RADIUS
     _dialog_active = False  # Flag to prevent cancel() when dialog is shown
+    _finished = False  # Flag to track if operator has completed
     
     def modal(self, context, event):
+        # If operator has finished (dialog completed), exit cleanly
+        if self._finished:
+            return {'FINISHED'}
+
         context.area.tag_redraw()
-        
+
         # Track mouse position and highlight hovered objects
         if event.type == 'MOUSEMOVE':
             self._last_mouse_pos = (event.mouse_region_x, event.mouse_region_y)
@@ -179,9 +184,15 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
         else:
             self.report({'ERROR'}, "Failed to create curve")
 
-        # Clean up and exit
+        # Set finished flag so modal() exits on next call
+        self._finished = True
+
+        # Clean up draw handler (already removed before dialog, but be safe)
         if self._handle:
-            bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+            try:
+                bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+            except:
+                pass  # Already removed
             self._handle = None
 
         context.area.tag_redraw()
@@ -340,8 +351,17 @@ class BC_OT_add_curve_interactive(bpy.types.Operator):
         if self._dialog_active:
             return
 
+        # Don't run cancel if we've already finished (dialog completed)
+        if self._finished:
+            return
+
+        # Clean up draw handler safely
         if self._handle:
-            bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+            try:
+                bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+                self._handle = None
+            except:
+                pass  # Already removed
 
         self.report({'INFO'}, "Curve addition cancelled")
         context.area.tag_redraw()

@@ -55,28 +55,43 @@ def get_alignment_from_pi(pi_object):
 
 _last_update = {}
 _throttle_ms = 50  # 20 FPS minimum
+_updating = False  # Reentrancy guard
 
 
 @persistent
 def blendercivil_update_handler(scene, depsgraph):
     """
     Detects PI movements and regenerates alignments.
-    
+
     This is called by Blender whenever objects change.
     """
+    global _updating
+
+    # Prevent reentrancy - critical to avoid crashes when deleting/creating objects
+    if _updating:
+        return
+
     current_time = time.time()
-    
+
     for update in depsgraph.updates:
         # Only care about transforms
         if not update.is_updated_transform:
             continue
-        
+
         obj = update.id
-        
+
         # Must be an Object
         if not isinstance(obj, bpy.types.Object):
             continue
-        
+
+        # Safety check: ensure object is still valid (not being deleted by BlenderBIM)
+        try:
+            if obj.name not in bpy.data.objects:
+                continue
+        except (ReferenceError, AttributeError):
+            # Object reference is dead - skip it
+            continue
+
         # Must be a BlenderCivil PI
         if 'bc_pi_id' not in obj or 'bc_alignment_id' not in obj:
             continue
@@ -97,34 +112,50 @@ def blendercivil_update_handler(scene, depsgraph):
             continue
         
         _last_update[alignment_id] = current_time
-        
+
         # === UPDATE THE ALIGNMENT ===
-        
+
         # Update PI position from object
         pi_id = obj['bc_pi_id']
         if pi_id < len(alignment.pis):
             pi = alignment.pis[pi_id]
-            
+
             # Get new position
             from .native_ifc_alignment import SimpleVector
             new_pos = SimpleVector(obj.location.x, obj.location.y)
-            
+
             # Check if actually moved
             old_pos = pi['position']
             if abs(new_pos.x - old_pos.x) < 0.001 and abs(new_pos.y - old_pos.y) < 0.001:
                 continue
-            
-            # Update position
-            pi['position'] = new_pos
-            if pi.get('ifc_point'):
-                pi['ifc_point'].Coordinates = [float(new_pos.x), float(new_pos.y)]
-            
-            # REGENERATE ENTIRE ALIGNMENT
-            alignment.regenerate_segments()
-            
-            # UPDATE VISUALIZATION
-            if hasattr(alignment, 'visualizer') and alignment.visualizer:
-                alignment.visualizer.update_all()
+
+            # Set reentrancy flag before updating
+            _updating = True
+            try:
+                # Update position
+                pi['position'] = new_pos
+                if pi.get('ifc_point'):
+                    pi['ifc_point'].Coordinates = [float(new_pos.x), float(new_pos.y)]
+
+                # REGENERATE ENTIRE ALIGNMENT
+                alignment.regenerate_segments()
+
+                # UPDATE VISUALIZATION
+                if hasattr(alignment, 'visualizer') and alignment.visualizer:
+                    try:
+                        alignment.visualizer.update_all()
+                    except (ReferenceError, AttributeError, RuntimeError) as e:
+                        # Visualization update failed (possibly due to BlenderBIM override)
+                        # Don't crash - just log and continue
+                        print(f"[BlenderCivil] Visualization update skipped: {e}")
+            except Exception as e:
+                # Catch any unexpected errors to prevent Blender crashes
+                print(f"[BlenderCivil] Error updating alignment: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                # Always reset flag, even if there's an error
+                _updating = False
 
 
 def register_handler():
