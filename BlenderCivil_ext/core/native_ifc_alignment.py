@@ -193,12 +193,42 @@ class NativeIfcAlignment:
 
         This creates: Tangent → Curve → Tangent → Curve → Tangent
         where curves exist at PIs that have curve data.
+
+        CRITICAL: Recalculates curve geometry from current PI positions!
         """
         self.segments = []
 
         if len(self.pis) < 2:
             return
 
+        # STEP 1: Recalculate all curve geometries from current PI positions
+        for i in range(len(self.pis)):
+            pi = self.pis[i]
+
+            # If this PI has a curve, recalculate its geometry
+            if 'curve' in pi:
+                # Need prev and next PI
+                if i > 0 and i < len(self.pis) - 1:
+                    prev_pi = self.pis[i - 1]
+                    next_pi = self.pis[i + 1]
+
+                    # Recalculate curve geometry with current PI positions
+                    radius = pi['curve']['radius']  # Keep the original radius
+                    updated_curve = self._calculate_curve(
+                        prev_pi['position'],
+                        pi['position'],
+                        next_pi['position'],
+                        radius
+                    )
+
+                    if updated_curve:
+                        pi['curve'] = updated_curve
+                    else:
+                        # Curve is no longer valid (e.g., PIs became collinear)
+                        del pi['curve']
+                        print(f"[Alignment] Removed invalid curve at PI {i}")
+
+        # STEP 2: Generate segments using updated curve data
         for i in range(len(self.pis) - 1):
             curr_pi = self.pis[i]
             next_pi = self.pis[i + 1]
