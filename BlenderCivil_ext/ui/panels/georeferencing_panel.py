@@ -94,7 +94,21 @@ class VIEW3D_PT_bc_georef_crs_search(Panel):
         layout = self.layout
         scene = context.scene
         georef = scene.bc_georef
-        
+
+        # API Key Status/Link
+        try:
+            preferences = context.preferences.addons[__package__.split('.')[0]].preferences
+            if not preferences.maptiler_api_key:
+                box = layout.box()
+                box.alert = True
+                col = box.column(align=True)
+                col.label(text="⚠ MapTiler API Key Required", icon='ERROR')
+                col.label(text="CRS search needs an API key")
+                col.operator("screen.userpref_show", text="Open Preferences", icon='PREFERENCES').section = 'ADDONS'
+                layout.separator()
+        except:
+            pass  # Preferences not available yet
+
         # Search box
         box = layout.box()
         row = box.row(align=True)

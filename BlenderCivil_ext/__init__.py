@@ -31,6 +31,7 @@ if "bpy" in locals():
     _reload_modules()
 
 # Import submodules after reload
+from . import preferences
 from . import core
 from . import operators
 from . import ui
@@ -44,6 +45,7 @@ def register():
 
     # Register modules in order
     print("\n[*] Loading modules:")
+    preferences.register()  # Register preferences FIRST (for API keys, etc.)
     core.register()
     ui.register()         # Register UI properties FIRST (operators depend on them)
     operators.register()  # Then operators can use the properties
@@ -69,6 +71,7 @@ def unregister():
     operators.unregister()  # Unregister operators first (they use properties)
     ui.unregister()         # Then UI properties
     core.unregister()
+    preferences.unregister()  # Unregister preferences last
 
     print("[+] BlenderCivil Extension unregistered")
 

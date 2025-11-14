@@ -45,8 +45,73 @@ class BC_OT_search_crs(Operator):
             return {'CANCELLED'}
         
         try:
+            # Get API key from preferences
+            # In Blender 4.5+, extensions are registered with names like "bl_ext.user_default.blendercivil"
+            # So we need to search for the correct addon key
+            root_package = __package__.split('.')[0] if '.' in __package__ else __package__
+            api_key = ""
+
+            try:
+                # Blender 4.5+ extension ID from blender_manifest.toml
+                extension_id = "blendercivil_ext"
+
+                # DEBUG: Print all available addon keys
+                print("\n[DEBUG] All registered addons:")
+                for k in sorted(context.preferences.addons.keys()):
+                    print(f"  - {k}")
+
+                # Try the standard Blender 4.5+ user extension naming first
+                addon_keys_to_try = [
+                    f"bl_ext.user_default.{extension_id}",  # Standard user extension
+                    f"bl_ext.system_default.{extension_id}",  # System extension
+                    extension_id,  # Direct ID
+                ]
+
+                print(f"\n[DEBUG] Trying addon keys:")
+                addon_key = None
+                for key in addon_keys_to_try:
+                    print(f"  - Checking: {key}")
+                    if key in context.preferences.addons:
+                        addon_key = key
+                        print(f"    ✓ FOUND!")
+                        break
+
+                # If not found, search for it
+                if not addon_key:
+                    print(f"\n[DEBUG] Not found in standard locations, searching...")
+                    for key in context.preferences.addons.keys():
+                        if extension_id in key.lower():
+                            addon_key = key
+                            print(f"  ✓ Found via search: {key}")
+                            break
+
+                if addon_key:
+                    print(f"\n[DEBUG] Using addon key: {addon_key}")
+                    preferences = context.preferences.addons[addon_key].preferences
+                    print(f"[DEBUG] Preferences type: {type(preferences).__name__}")
+
+                    if hasattr(preferences, 'maptiler_api_key'):
+                        api_key = preferences.maptiler_api_key
+                        print(f"[DEBUG] API key retrieved: {'Yes' if api_key else 'No (empty)'}")
+                    else:
+                        print(f"[DEBUG] ERROR: maptiler_api_key attribute not found")
+                        print(f"[DEBUG] Available attributes: {[a for a in dir(preferences) if not a.startswith('_')]}")
+                        self.report({'ERROR'}, f"Preferences missing maptiler_api_key")
+                        return {'CANCELLED'}
+                else:
+                    print(f"\n[DEBUG] ERROR: Could not find extension '{extension_id}'")
+                    self.report({'ERROR'}, f"Could not find BlenderCivil extension")
+                    return {'CANCELLED'}
+
+            except Exception as e:
+                print(f"\n[DEBUG] EXCEPTION: {e}")
+                import traceback
+                traceback.print_exc()
+                self.report({'ERROR'}, f"Error accessing API key: {str(e)}")
+                return {'CANCELLED'}
+
             # Perform search
-            searcher = CRSSearcher()
+            searcher = CRSSearcher(api_key=api_key)
             results = searcher.search(query, limit=20)
             
             # Clear previous results
@@ -101,7 +166,35 @@ class BC_OT_select_crs(Operator):
         try:
             # Get CRS details
             if HAS_BACKEND:
-                searcher = CRSSearcher()
+                # Get API key from preferences (Blender 4.5+ extension)
+                extension_id = "blendercivil_ext"
+                api_key = ""
+
+                try:
+                    addon_keys_to_try = [
+                        f"bl_ext.user_default.{extension_id}",
+                        f"bl_ext.system_default.{extension_id}",
+                        extension_id,
+                    ]
+
+                    addon_key = None
+                    for key in addon_keys_to_try:
+                        if key in context.preferences.addons:
+                            addon_key = key
+                            break
+
+                    if not addon_key:
+                        for key in context.preferences.addons.keys():
+                            if extension_id in key.lower():
+                                addon_key = key
+                                break
+
+                    if addon_key and hasattr(context.preferences.addons[addon_key].preferences, 'maptiler_api_key'):
+                        api_key = context.preferences.addons[addon_key].preferences.maptiler_api_key
+                except Exception as e:
+                    pass  # Continue with empty API key
+
+                searcher = CRSSearcher(api_key=api_key)
                 crs_info = searcher.get_crs(self.epsg_code)
                 
                 # Update properties

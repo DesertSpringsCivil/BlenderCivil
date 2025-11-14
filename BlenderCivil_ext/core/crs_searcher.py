@@ -68,19 +68,21 @@ class CRSInfo:
 class CRSSearcher:
     """
     Search and retrieve coordinate reference system information.
-    
-    Primary source: EPSG.io API
+
+    Primary source: MapTiler Coordinates API (requires API key)
     Fallback: PyProj library (if available)
-    
+
     Examples:
-        >>> searcher = CRSSearcher()
+        >>> searcher = CRSSearcher(api_key="your_maptiler_key")
         >>> results = searcher.search("UTM Zone 10")
         >>> crs = searcher.get_crs(26910)  # NAD83 / UTM zone 10N
     """
-    
-    EPSG_IO_BASE = "https://epsg.io/"
-    
-    def __init__(self, timeout: int = 10):
+
+    # New MapTiler Coordinates API endpoints
+    MAPTILER_BASE = "https://api.maptiler.com/coordinates/"
+
+    def __init__(self, api_key: str = "", timeout: int = 10):
+        self.api_key = api_key
         self.timeout = timeout
         self.logger = logging.getLogger(__name__)
     
@@ -102,15 +104,19 @@ class CRSSearcher:
             List of CRSInfo objects matching the search
         """
         self.logger.info(f"Searching for CRS: {query}")
-        
-        # Try EPSG.io API first
-        results = self._search_epsg_io(query, kind, limit)
-        
+
+        # Try MapTiler API first (if API key provided)
+        results = []
+        if self.api_key:
+            results = self._search_maptiler(query, kind, limit)
+        else:
+            self.logger.warning("No MapTiler API key provided - search will be limited")
+
         if not results and PYPROJ_AVAILABLE:
             # Fallback to PyProj
             self.logger.info("Falling back to PyProj database")
             results = self._search_pyproj(query, kind, limit)
-        
+
         return results
     
     def get_crs(self, epsg_code: int) -> Optional[CRSInfo]:
@@ -124,15 +130,17 @@ class CRSSearcher:
             CRSInfo object with full metadata, or None if not found
         """
         self.logger.info(f"Fetching CRS details for EPSG:{epsg_code}")
-        
-        # Try EPSG.io API first
-        crs_info = self._get_from_epsg_io(epsg_code)
-        
+
+        # Try MapTiler API first (if API key provided)
+        crs_info = None
+        if self.api_key:
+            crs_info = self._get_from_maptiler(epsg_code)
+
         if not crs_info and PYPROJ_AVAILABLE:
             # Fallback to PyProj
             self.logger.info("Falling back to PyProj database")
             crs_info = self._get_from_pyproj(epsg_code)
-        
+
         return crs_info
     
     def validate_epsg(self, epsg_code: int) -> bool:
@@ -148,88 +156,105 @@ class CRSSearcher:
         crs_info = self.get_crs(epsg_code)
         return crs_info is not None
     
-    def _search_epsg_io(
+    def _search_maptiler(
         self,
         query: str,
         kind: Optional[str],
         limit: int
     ) -> List[CRSInfo]:
-        """Search using EPSG.io API"""
+        """Search using MapTiler Coordinates API"""
         try:
-            # Build query parameters
+            # Build URL - MapTiler uses query in path + .json extension
+            url = f"{self.MAPTILER_BASE}search/{query}.json"
+
+            # Add API key as query parameter
             params = {
-                'q': query,
-                'format': 'json'
+                'key': self.api_key,
+                'limit': limit
             }
-            
+
             # Make request
-            url = f"{self.EPSG_IO_BASE}?{self._build_query_string(params)}"
-            response = requests.get(url, timeout=self.timeout)
+            response = requests.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
-            
+
             data = response.json()
             results = []
-            
-            # Parse results
+
+            # Parse results (MapTiler format)
             if 'results' in data:
-                for item in data['results'][:limit]:
+                for item in data['results']:
                     # Filter by kind if specified
                     if kind and item.get('kind', '').upper() != kind.upper():
                         continue
-                    
-                    crs_info = self._parse_epsg_io_result(item)
+
+                    crs_info = self._parse_maptiler_result(item)
                     if crs_info:
                         results.append(crs_info)
-            
-            self.logger.info(f"Found {len(results)} results from EPSG.io")
+
+            self.logger.info(f"Found {len(results)} results from MapTiler")
             return results
-            
+
         except requests.RequestException as e:
-            self.logger.warning(f"EPSG.io API error: {e}")
+            self.logger.warning(f"MapTiler API error: {e}")
             return []
         except Exception as e:
-            self.logger.error(f"Unexpected error in EPSG.io search: {e}")
+            self.logger.error(f"Unexpected error in MapTiler search: {e}")
             return []
     
-    def _get_from_epsg_io(self, epsg_code: int) -> Optional[CRSInfo]:
-        """Get CRS details from EPSG.io API"""
+    def _get_from_maptiler(self, epsg_code: int) -> Optional[CRSInfo]:
+        """Get CRS details from MapTiler Coordinates API"""
         try:
-            # Request JSON format with full details
-            url = f"{self.EPSG_IO_BASE}{epsg_code}.json"
-            response = requests.get(url, timeout=self.timeout)
+            # Request details for specific EPSG code
+            url = f"{self.MAPTILER_BASE}{epsg_code}.json"
+            params = {'key': self.api_key}
+
+            response = requests.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
-            
+
             data = response.json()
-            return self._parse_epsg_io_result(data)
-            
+            return self._parse_maptiler_result(data)
+
         except requests.RequestException as e:
-            self.logger.warning(f"EPSG.io API error: {e}")
+            self.logger.warning(f"MapTiler API error: {e}")
             return None
         except Exception as e:
             self.logger.error(f"Unexpected error fetching EPSG:{epsg_code}: {e}")
             return None
-    
-    def _parse_epsg_io_result(self, data: Dict) -> Optional[CRSInfo]:
-        """Parse EPSG.io API response into CRSInfo"""
+
+    def _parse_maptiler_result(self, data: Dict) -> Optional[CRSInfo]:
+        """Parse MapTiler Coordinates API response into CRSInfo"""
         try:
+            # DEBUG: Print raw data to see structure
+            import json
+            self.logger.info(f"Parsing MapTiler result: {json.dumps(data, indent=2)[:500]}")
+
             # Extract bbox if available
             bbox = None
             if 'bbox' in data:
                 b = data['bbox']
                 bbox = (b[0], b[1], b[2], b[3])  # west, south, east, north
-            
+
+            # MapTiler may use 'id' instead of 'code' for EPSG
+            # The id/code might be nested in a dict, so handle that
+            code_value = data.get('code', data.get('id', 0))
+            if isinstance(code_value, dict):
+                # If it's a dict, try to get 'code' or 'epsg' from it
+                epsg_code = int(code_value.get('code', code_value.get('epsg', 0)))
+            else:
+                epsg_code = int(code_value) if code_value else 0
+
             return CRSInfo(
-                epsg_code=int(data.get('code', 0)),
-                name=data.get('name', ''),
-                kind=data.get('kind', ''),
-                area=data.get('area', ''),
+                epsg_code=epsg_code,
+                name=data.get('name') or '',
+                kind=data.get('kind') or '',
+                area=data.get('area') or '',
                 bbox=bbox,
-                unit=data.get('unit', 'metre'),
-                proj4=data.get('proj4', ''),
-                wkt=data.get('wkt', '')
+                unit=data.get('unit') or 'metre',
+                proj4=data.get('proj4') or '',
+                wkt=data.get('wkt') or ''
             )
         except (KeyError, ValueError) as e:
-            self.logger.warning(f"Failed to parse EPSG.io result: {e}")
+            self.logger.warning(f"Failed to parse MapTiler result: {e}")
             return None
     
     def _search_pyproj(
