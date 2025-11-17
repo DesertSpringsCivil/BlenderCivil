@@ -1,0 +1,65 @@
+BlenderCivil - Civil Engineering Tools for Blender
+Copyright 2024-2025 Michael Yoder / Desert Springs Civil Engineering PLLC
+
+This product includes software developed at Desert Springs Civil Engineering PLLC.
+
+===============================================================================
+
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+This project incorporates components from the projects listed below.
+
+-------------------------------------------------------------------------------
+
+1. Blender
+   License: GNU GPL v3
+   Copyright: Blender Foundation
+   Website: https://www.blender.org/
+
+   BlenderCivil is a Blender extension/addon that extends the functionality
+   of Blender for civil engineering applications.
+
+-------------------------------------------------------------------------------
+
+2. IfcOpenShell
+   License: GNU LGPL v3
+   Copyright: IfcOpenShell contributors
+   Website: http://ifcopenshell.org/
+
+   Used for reading, writing, and manipulating IFC (Industry Foundation Classes)
+   files in accordance with buildingSMART standards.
+
+-------------------------------------------------------------------------------
+
+3. BlenderBIM Add-on
+   License: GNU GPL v3
+   Copyright: Dion Moult and contributors
+   Website: https://blenderbim.org/
+
+   BlenderCivil is designed to work alongside BlenderBIM for complete BIM
+   workflows and IFC file management.
+
+-------------------------------------------------------------------------------
+
+4. MapTiler Coordinates API
+   Service: MapTiler Cloud
+   Website: https://www.maptiler.com/
+
+   Used for coordinate reference system (CRS) search functionality.
+   Users must obtain their own API key from MapTiler.
+   API key is stored locally in Blender user preferences.
+
+-------------------------------------------------------------------------------
+
+DEVELOPMENT ASSISTANCE
+
+This project was developed with assistance from:
+- Claude Code (Anthropic) - AI-assisted development and code generation
+
+-------------------------------------------------------------------------------
+
+For questions about third-party licenses or attributions, please contact:
+Michael Yoder
+Desert Springs Civil Engineering PLLC
+
+===============================================================================

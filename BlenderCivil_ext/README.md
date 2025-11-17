@@ -257,4 +257,28 @@ Generated with assistance from **Claude Code** (Anthropic)
 
 ---
 
+## 📄 License
+
+**Copyright © 2024-2025 Michael Yoder / Desert Springs Civil Engineering PLLC**
+
+BlenderCivil is licensed under the **Apache License 2.0**.
+
+This means you can:
+- ✅ Use it commercially
+- ✅ Modify and distribute it
+- ✅ Use it privately
+- ✅ Use patent claims from contributors
+
+**Requirements:**
+- Include the original copyright notice and license
+- State any significant changes made
+- Include a copy of the Apache 2.0 license
+
+See the [LICENSE](LICENSE) file for full terms.
+
+For commercial licensing inquiries or custom development, contact:
+**Desert Springs Civil Engineering PLLC**
+
+---
+
 **Made with ❤️ for the civil engineering community**
