@@ -321,28 +321,76 @@ class NativeIfcManager:
     @classmethod
     def get_project_collection(cls):
         """Get Blender collection for the project"""
-        if cls.project_collection is None:
-            # Try to find existing collection
-            if "BlenderCivil Project" in bpy.data.collections:
-                cls.project_collection = bpy.data.collections["BlenderCivil Project"]
+        # Validate existing reference
+        if cls.project_collection is not None:
+            try:
+                # Check if collection still exists
+                _ = cls.project_collection.name
+                if cls.project_collection.name in bpy.data.collections:
+                    return cls.project_collection
+            except (ReferenceError, AttributeError):
+                # Reference is stale
+                pass
+            cls.project_collection = None
+
+        # Try to find existing collection by name
+        if "BlenderCivil Project" in bpy.data.collections:
+            cls.project_collection = bpy.data.collections["BlenderCivil Project"]
+        elif cls.file is not None:
+            # Collection doesn't exist but we have an IFC file - recreate hierarchy
+            print("[NativeIfcManager] Project collection was deleted, recreating...")
+            cls._create_blender_hierarchy()
+
         return cls.project_collection
 
     @classmethod
     def get_alignments_collection(cls):
         """Get Blender empty for alignments (parent object)"""
-        if cls.alignments_collection is None:
-            # Try to find existing empty object
-            if "📏 Alignments" in bpy.data.objects:
-                cls.alignments_collection = bpy.data.objects["📏 Alignments"]
+        # Validate existing reference
+        if cls.alignments_collection is not None:
+            try:
+                # Check if object still exists
+                _ = cls.alignments_collection.name
+                if cls.alignments_collection.name in bpy.data.objects:
+                    return cls.alignments_collection
+            except (ReferenceError, AttributeError):
+                # Reference is stale
+                pass
+            cls.alignments_collection = None
+
+        # Try to find existing object by name
+        if "📏 Alignments" in bpy.data.objects:
+            cls.alignments_collection = bpy.data.objects["📏 Alignments"]
+        elif cls.file is not None:
+            # Object doesn't exist but we have an IFC file - recreate hierarchy
+            print("[NativeIfcManager] Alignments object was deleted, recreating...")
+            cls._create_blender_hierarchy()
+
         return cls.alignments_collection
 
     @classmethod
     def get_geomodels_collection(cls):
         """Get Blender empty for geomodels (parent object)"""
-        if cls.geomodels_collection is None:
-            # Try to find existing empty object
-            if "🌏 Geomodels" in bpy.data.objects:
-                cls.geomodels_collection = bpy.data.objects["🌏 Geomodels"]
+        # Validate existing reference
+        if cls.geomodels_collection is not None:
+            try:
+                # Check if object still exists
+                _ = cls.geomodels_collection.name
+                if cls.geomodels_collection.name in bpy.data.objects:
+                    return cls.geomodels_collection
+            except (ReferenceError, AttributeError):
+                # Reference is stale
+                pass
+            cls.geomodels_collection = None
+
+        # Try to find existing object by name
+        if "🌏 Geomodels" in bpy.data.objects:
+            cls.geomodels_collection = bpy.data.objects["🌏 Geomodels"]
+        elif cls.file is not None:
+            # Object doesn't exist but we have an IFC file - recreate hierarchy
+            print("[NativeIfcManager] Geomodels object was deleted, recreating...")
+            cls._create_blender_hierarchy()
+
         return cls.geomodels_collection
     
     @classmethod
@@ -386,17 +434,21 @@ class NativeIfcManager:
         cls.project = None
         cls.site = None
         cls.road = None
-        
+
         # Remove Blender collections if they exist
         if cls.project_collection and cls.project_collection.name in bpy.data.collections:
             bpy.data.collections.remove(cls.project_collection)
-        
+
         cls.project_collection = None
         cls.site_collection = None
         cls.road_collection = None
         cls.alignments_collection = None
         cls.geomodels_collection = None
-        
+
+        # Clear alignment registry
+        from . import alignment_registry
+        alignment_registry.clear_registry()
+
         print("✅ Cleared IFC data and Blender hierarchy")
     
     @classmethod

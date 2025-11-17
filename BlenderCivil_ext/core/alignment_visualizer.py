@@ -37,12 +37,34 @@ class AlignmentVisualizer:
 
         # Create alignment empty and parent to Alignments organizational empty
         alignments_parent = NativeIfcManager.get_alignments_collection()
+
+        # Validate that alignments_parent still exists in Blender
         if alignments_parent:
-            # Check if alignment empty already exists
+            try:
+                # Test if object is still valid
+                _ = alignments_parent.name
+            except ReferenceError:
+                # Object was deleted, recreate the hierarchy
+                print(f"[Visualizer] Alignments parent was deleted, recreating hierarchy")
+                NativeIfcManager._create_blender_hierarchy()
+                alignments_parent = NativeIfcManager.get_alignments_collection()
+
+        if alignments_parent:
+            # Check if alignment empty already exists and is valid
             alignment_empty_name = f"📐 {name}"
             if alignment_empty_name in bpy.data.objects:
-                self.alignment_empty = bpy.data.objects[alignment_empty_name]
+                existing_empty = bpy.data.objects[alignment_empty_name]
+                # Validate it's still valid
+                try:
+                    _ = existing_empty.name
+                    self.alignment_empty = existing_empty
+                except ReferenceError:
+                    # Was deleted, will create new one below
+                    self.alignment_empty = None
             else:
+                self.alignment_empty = None
+
+            if not self.alignment_empty:
                 # Create new alignment empty
                 self.alignment_empty = bpy.data.objects.new(alignment_empty_name, None)
                 self.alignment_empty.empty_display_type = 'ARROWS'
@@ -62,7 +84,7 @@ class AlignmentVisualizer:
     def _ensure_valid_collection(self):
         """
         Ensure visualizer has a valid collection reference.
-        If collection was deleted, get a new one.
+        If collection was deleted (e.g., by undo), fall back to scene collection.
 
         This fixes the "StructRNA of type Collection has been removed" error
         that occurs when the update system tries to create objects after the
@@ -71,8 +93,6 @@ class AlignmentVisualizer:
         Returns:
             bool: True if valid collection exists, False otherwise
         """
-        from .native_ifc_manager import NativeIfcManager
-
         # Check if current collection is still valid
         try:
             if self.collection and self.collection.name in bpy.data.collections:
@@ -82,18 +102,15 @@ class AlignmentVisualizer:
             # Collection reference is dead
             pass
 
-        # Collection is invalid or missing - get a new one
-        print("[Visualizer] Collection reference invalid, refreshing...")
+        # Collection is invalid - use scene collection (always valid)
+        # Don't try to recreate hierarchy during visualization - that can cause issues
+        print("[Visualizer] Collection was deleted (undo?), using scene collection")
+        self.collection = bpy.context.scene.collection
 
-        self.collection = NativeIfcManager.get_project_collection()
-        if not self.collection:
-            # Fallback to scene collection
-            self.collection = bpy.context.scene.collection
-            print("[Visualizer] Using scene collection as fallback")
-        else:
-            print(f"[Visualizer] Refreshed to collection: {self.collection.name}")
+        # Also clear alignment empty reference since hierarchy is gone
+        self.alignment_empty = None
 
-        return self.collection is not None
+        return True
 
     def create_pi_object(self, pi_data):
         """Create Blender Empty for PI - Always GREEN (no radius!)"""
@@ -124,12 +141,17 @@ class AlignmentVisualizer:
         # Always GREEN for PIs (they're just intersection points)
         obj.color = (0.0, 1.0, 0.0, 1.0)
 
-        # Link to project collection
+        # Link to collection (already validated by _ensure_valid_collection)
         self.collection.objects.link(obj)
 
         # Parent to alignment empty for hierarchy organization
         if self.alignment_empty:
-            obj.parent = self.alignment_empty
+            try:
+                _ = self.alignment_empty.name
+                obj.parent = self.alignment_empty
+            except (ReferenceError, AttributeError):
+                # Alignment empty was deleted, skip parenting
+                pass
 
         self.pi_objects.append(obj)
 
@@ -216,12 +238,17 @@ class AlignmentVisualizer:
         else:
             obj.color = (1.0, 0.3, 0.3, 1.0)  # Red for curves
 
-        # Link to project collection
+        # Link to collection (already validated by _ensure_valid_collection)
         self.collection.objects.link(obj)
 
         # Parent to alignment empty for hierarchy organization
         if self.alignment_empty:
-            obj.parent = self.alignment_empty
+            try:
+                _ = self.alignment_empty.name
+                obj.parent = self.alignment_empty
+            except (ReferenceError, AttributeError):
+                # Alignment empty was deleted, skip parenting
+                pass
 
         self.segment_objects.append(obj)
 
@@ -287,11 +314,36 @@ class AlignmentVisualizer:
             # Get existing segment object
             seg_obj = self.segment_objects[i]
 
-            # Safety check
+            # Safety check - if object was deleted (e.g., by undo), recreate it
+            needs_recreation = False
             try:
                 if not seg_obj or seg_obj.name not in bpy.data.objects:
-                    continue
+                    needs_recreation = True
             except (ReferenceError, AttributeError):
+                needs_recreation = True
+
+            if needs_recreation:
+                # Object was deleted, recreate it
+                try:
+                    # create_segment_curve appends to segment_objects, so we need to handle that
+                    old_len = len(self.segment_objects)
+                    new_obj = self.create_segment_curve(segment)
+
+                    if new_obj:
+                        # Remove from end where it was appended
+                        if len(self.segment_objects) > old_len:
+                            self.segment_objects.pop()
+
+                        # Put it in the correct position
+                        if i < len(self.segment_objects):
+                            self.segment_objects[i] = new_obj
+                        else:
+                            # If list isn't long enough, append is correct
+                            self.segment_objects.append(new_obj)
+
+                        print(f"[Visualizer] Recreated segment {i} (was deleted)")
+                except Exception as e:
+                    print(f"[Visualizer] Error recreating segment {i}: {e}")
                 continue
 
             # Update curve geometry data in-place
@@ -375,6 +427,34 @@ class AlignmentVisualizer:
 
     def update_all(self):
         """Update entire visualization - Required by complete_update_system"""
+        # FIRST: Ensure we have a valid collection for all operations
+        # This prevents some objects going to hierarchy and others to scene root
+        self._ensure_valid_collection()
+
+        # Validate and recreate PI objects if they were deleted (e.g., by undo)
+        for pi_data in self.alignment.pis:
+            blender_obj = pi_data.get('blender_object')
+            needs_recreation = False
+
+            if blender_obj is not None:
+                # Check if object still exists
+                try:
+                    _ = blender_obj.name
+                    if blender_obj.name not in bpy.data.objects:
+                        needs_recreation = True
+                except (ReferenceError, AttributeError):
+                    needs_recreation = True
+            else:
+                needs_recreation = True
+
+            if needs_recreation:
+                # Recreate PI object
+                try:
+                    self.create_pi_object(pi_data)
+                    print(f"[Visualizer] Recreated PI {pi_data['id']} (was deleted)")
+                except Exception as e:
+                    print(f"[Visualizer] Error recreating PI {pi_data['id']}: {e}")
+
         # Use in-place updates to avoid conflicts with modal operators
         self.update_segments_in_place()
 

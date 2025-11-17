@@ -8,13 +8,13 @@ This solves the problem of operators needing to work with alignment Python objec
 not just IFC entities.
 """
 
-import weakref
 from typing import Optional, Dict, Tuple
 
 
-# Global registries using weak references to avoid memory leaks
-_alignment_instances: Dict[str, 'NativeIfcAlignment'] = weakref.WeakValueDictionary()
-_visualizer_instances: Dict[str, 'AlignmentVisualizer'] = weakref.WeakValueDictionary()
+# Global registries - use regular dicts to keep alignments alive
+# These persist as long as the IFC file is loaded
+_alignment_instances: Dict[str, 'NativeIfcAlignment'] = {}
+_visualizer_instances: Dict[str, 'AlignmentVisualizer'] = {}
 
 
 def register_alignment(alignment_obj):

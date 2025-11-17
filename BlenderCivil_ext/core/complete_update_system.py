@@ -61,7 +61,7 @@ _updating = False  # Reentrancy guard
 @persistent
 def blendercivil_update_handler(scene, depsgraph):
     """
-    Detects PI movements and regenerates alignments.
+    Detects PI movements/deletions and regenerates alignments.
 
     This is called by Blender whenever objects change.
     """
@@ -72,6 +72,105 @@ def blendercivil_update_handler(scene, depsgraph):
         return
 
     current_time = time.time()
+
+    # ========================================================================
+    # PART 1: Check for deleted PI objects and sync to IFC
+    # ========================================================================
+
+    alignments_to_update = set()
+
+    for alignment in list(_alignment_registry.values()):
+        # Check if any PI objects have been deleted
+        deleted_pis = []
+
+        for pi_idx, pi in enumerate(alignment.pis):
+            blender_obj = pi.get('blender_object')
+
+            if blender_obj is not None:
+                # Check if object still exists in Blender
+                try:
+                    # Try to access the object's name - will raise ReferenceError if deleted
+                    _ = blender_obj.name
+
+                    # Also check if it's in bpy.data.objects
+                    if blender_obj.name not in bpy.data.objects:
+                        deleted_pis.append(pi_idx)
+                        print(f"[BlenderCivil] PI {pi_idx} deleted from outliner")
+                except ReferenceError:
+                    # Object was deleted
+                    deleted_pis.append(pi_idx)
+                    print(f"[BlenderCivil] PI {pi_idx} deleted (reference error)")
+
+        # If any PIs were deleted, remove them from the alignment
+        if deleted_pis:
+            _updating = True
+            try:
+                # Remove PIs in reverse order to maintain indices
+                for pi_idx in reversed(deleted_pis):
+                    pi = alignment.pis[pi_idx]
+
+                    # Remove IFC entity if it exists
+                    if pi.get('ifc_point'):
+                        try:
+                            alignment.ifc.remove(pi['ifc_point'])
+                            print(f"[BlenderCivil] Removed IFC point for PI {pi_idx}")
+                        except Exception as e:
+                            print(f"[BlenderCivil] Could not remove IFC point: {e}")
+
+                    # Remove from alignment.pis list
+                    alignment.pis.pop(pi_idx)
+
+                # Reindex remaining PIs
+                for new_idx, pi in enumerate(alignment.pis):
+                    pi['id'] = new_idx
+                    # Update blender object property if it exists
+                    if pi.get('blender_object'):
+                        pi['blender_object']['bc_pi_id'] = new_idx
+
+                # Mark this alignment for regeneration
+                alignments_to_update.add(id(alignment))
+
+                print(f"[BlenderCivil] Removed {len(deleted_pis)} PI(s), {len(alignment.pis)} remaining")
+
+            except Exception as e:
+                print(f"[BlenderCivil] Error during PI deletion: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                _updating = False
+
+    # Regenerate alignments that had deletions
+    for alignment_id in alignments_to_update:
+        for alignment in _alignment_registry.values():
+            if id(alignment) == alignment_id:
+                _updating = True
+                try:
+                    # Regenerate segments
+                    has_curves = any('curve' in pi for pi in alignment.pis)
+                    if has_curves:
+                        alignment.regenerate_segments_with_curves()
+                    else:
+                        alignment.regenerate_segments()
+
+                    # Update visualization
+                    if hasattr(alignment, 'visualizer') and alignment.visualizer:
+                        try:
+                            alignment.visualizer.update_all()
+                        except (ReferenceError, AttributeError, RuntimeError) as e:
+                            print(f"[BlenderCivil] Visualization update skipped: {e}")
+
+                    print(f"[BlenderCivil] Regenerated alignment after PI deletion")
+                except Exception as e:
+                    print(f"[BlenderCivil] Error regenerating after deletion: {e}")
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    _updating = False
+                break
+
+    # ========================================================================
+    # PART 2: Process transform updates (existing code)
+    # ========================================================================
 
     for update in depsgraph.updates:
         # Only care about transforms
