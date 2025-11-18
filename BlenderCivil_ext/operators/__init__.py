@@ -58,6 +58,7 @@ if core.has_ifc_support():
     from . import curve_operators
     from . import corridor_operators
     from . import ifc_hierarchy_operators
+    from . import profile_view_operators
 
     _operator_modules = [
         alignment_management_operators,
@@ -73,6 +74,7 @@ if core.has_ifc_support():
         curve_operators,
         corridor_operators,
         ifc_hierarchy_operators,
+        profile_view_operators,
     ]
 
 

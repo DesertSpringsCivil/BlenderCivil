@@ -49,6 +49,9 @@ try:
     from . import complete_update_system
     from . import ifc_geometry_builders
     from . import corridor_mesh_generator
+    from . import profile_view_data
+    from . import profile_view_renderer
+    from . import profile_view_overlay
 
     _ifc_modules = [
         native_ifc_manager,
@@ -62,6 +65,9 @@ try:
         complete_update_system,
         ifc_geometry_builders,
         corridor_mesh_generator,
+        profile_view_data,
+        profile_view_renderer,
+        profile_view_overlay,
     ]
     _ifc_modules_loaded = True
 

@@ -43,6 +43,9 @@ from . import vertical_properties
 # Import cross section properties (no IFC dependency for properties)
 from . import cross_section_properties
 
+# Import profile view properties (no IFC dependency for properties)
+from . import profile_view_properties
+
 # List of UI modules
 _ui_modules = [dependency_panel]
 
@@ -62,6 +65,7 @@ if core.has_ifc_support():
     from . import validation_panel
     from . import corridor_panel
     from . import panels
+    from . import profile_view_panel
 
     _ui_modules.extend([
         file_management_panel,
@@ -69,6 +73,7 @@ if core.has_ifc_support():
         validation_panel,
         corridor_panel,
         panels,
+        profile_view_panel,
     ])
 
 
@@ -83,6 +88,7 @@ def register():
     georef_properties.register()
     vertical_properties.register()
     cross_section_properties.register()
+    profile_view_properties.register()
 
     # Register UI panel modules
     for module in _ui_modules:
@@ -98,6 +104,7 @@ def unregister():
         module.unregister()
 
     # Unregister properties in reverse order
+    profile_view_properties.unregister()
     cross_section_properties.unregister()
     vertical_properties.unregister()
     georef_properties.unregister()
