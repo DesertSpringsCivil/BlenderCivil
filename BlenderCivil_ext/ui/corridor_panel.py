@@ -43,7 +43,7 @@ from bpy.types import Panel
 class BLENDERCIVIL_PT_corridor_generation(Panel):
     """
     Main corridor generation panel.
-    
+
     Provides primary controls for creating 3D corridors from
     alignments and cross-sections.
     """
@@ -53,6 +53,7 @@ class BLENDERCIVIL_PT_corridor_generation(Panel):
     bl_region_type = 'UI'
     bl_category = 'BlenderCivil'
     bl_order = 50
+    bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):
         """Draw the panel."""
