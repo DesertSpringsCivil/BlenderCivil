@@ -65,7 +65,7 @@ if core.has_ifc_support():
     from . import validation_panel
     from . import corridor_panel
     from . import panels
-    from . import profile_view_panel
+    from .panels import profile_view_panel
 
     _ui_modules.extend([
         file_management_panel,
