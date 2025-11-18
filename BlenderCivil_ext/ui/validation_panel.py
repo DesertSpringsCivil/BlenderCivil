@@ -34,6 +34,7 @@ class VIEW3D_PT_native_ifc_validation(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "BlenderCivil"
+    bl_order = 3
     bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):

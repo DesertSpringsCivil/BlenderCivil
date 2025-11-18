@@ -112,7 +112,7 @@ class BC_PT_CrossSection_Main(Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "BlenderCivil"
-    bl_order = 4
+    bl_order = 8
     bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):

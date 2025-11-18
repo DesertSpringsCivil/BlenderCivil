@@ -67,6 +67,7 @@ class VIEW3D_PT_bc_georeferencing(Panel):
     bl_category = 'BlenderCivil'
     bl_label = "Georeferencing"
     bl_idname = "VIEW3D_PT_bc_georeferencing"
+    bl_order = 5
     bl_options = {'DEFAULT_CLOSED'}
 
     # Header removed - text-only panel label

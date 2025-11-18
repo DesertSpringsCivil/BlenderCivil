@@ -46,6 +46,7 @@ class BLENDERCIVIL_PT_cross_section_visualization(Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'BlenderCivil'
+    bl_order = 7
     bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):

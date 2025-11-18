@@ -63,6 +63,7 @@ class VIEW3D_PT_bc_vertical_alignment(Panel):
     bl_category = 'BlenderCivil'
     bl_label = "Vertical Alignment"
     bl_idname = "VIEW3D_PT_bc_vertical_alignment"
+    bl_order = 6
     bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):
