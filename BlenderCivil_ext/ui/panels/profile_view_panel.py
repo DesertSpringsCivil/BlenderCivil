@@ -38,13 +38,13 @@ from bpy.types import Panel
 
 
 class BC_PT_ProfileViewPanel(Panel):
-    """Profile View Control Panel"""
+    """Profile View Control Panel (Sub-panel of Vertical Alignment)"""
     bl_label = "Profile View"
     bl_idname = "BC_PT_profile_view"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'BlenderCivil'
-    bl_order = 5  # After alignment panels
+    bl_parent_id = "VIEW3D_PT_bc_vertical_alignment"  # Make this a sub-panel
+    bl_order = 100  # Display after other vertical alignment sub-panels
     
     def draw(self, context):
         layout = self.layout
