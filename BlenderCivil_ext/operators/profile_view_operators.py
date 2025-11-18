@@ -60,19 +60,24 @@ class BC_OT_ProfileView_Toggle(Operator):
     bl_label = "Toggle Profile View"
     bl_description = "Show/hide the profile view overlay at bottom of viewport"
     bl_options = {'REGISTER'}
-    
+
     def execute(self, context):
         # Import here to avoid circular dependencies
         from ..core.profile_view_overlay import get_profile_overlay
-        
+
         overlay = get_profile_overlay()
+        was_enabled = overlay.enabled
         overlay.toggle(context)
-        
-        if overlay.enabled:
+
+        # Start or stop the modal event handler
+        if overlay.enabled and not was_enabled:
+            # Start the modal event handler
+            bpy.ops.blendercivil.profile_view_modal_handler('INVOKE_DEFAULT')
             self.report({'INFO'}, "Profile view enabled")
         else:
             self.report({'INFO'}, "Profile view disabled")
-        
+            # Modal handler will stop itself when overlay is disabled
+
         return {'FINISHED'}
 
 
@@ -82,12 +87,18 @@ class BC_OT_ProfileView_Enable(Operator):
     bl_label = "Enable Profile View"
     bl_description = "Show the profile view overlay"
     bl_options = {'REGISTER'}
-    
+
     def execute(self, context):
         from ..core.profile_view_overlay import get_profile_overlay
-        
+
         overlay = get_profile_overlay()
+        was_enabled = overlay.enabled
         overlay.enable(context)
+
+        # Start the modal event handler if not already running
+        if not was_enabled:
+            bpy.ops.blendercivil.profile_view_modal_handler('INVOKE_DEFAULT')
+
         self.report({'INFO'}, "Profile view enabled")
         return {'FINISHED'}
 
@@ -363,6 +374,57 @@ class BC_OT_ProfileView_ClearData(Operator):
         return context.window_manager.invoke_confirm(self, event)
 
 
+class BC_OT_ProfileView_ModalHandler(Operator):
+    """Modal event handler for profile view interaction (resize, etc.)"""
+    bl_idname = "blendercivil.profile_view_modal_handler"
+    bl_label = "Profile View Modal Handler"
+    bl_description = "Handle mouse events for profile view resize and interaction"
+    bl_options = {'INTERNAL'}
+
+    def modal(self, context, event):
+        from ..core.profile_view_overlay import get_profile_overlay
+
+        overlay = get_profile_overlay()
+
+        # Stop modal handler if overlay is disabled
+        if not overlay.enabled:
+            # Restore cursor
+            context.window.cursor_set('DEFAULT')
+            return {'FINISHED'}
+
+        # Handle mouse movement
+        if event.type == 'MOUSEMOVE':
+            overlay.handle_mouse_move(context, event)
+            # Tag viewport for redraw if hovering or resizing
+            if overlay.hover_resize_border or overlay.is_resizing:
+                if context.area:
+                    context.area.tag_redraw()
+
+        # Handle mouse press
+        elif event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            if overlay.handle_mouse_press(context, event):
+                return {'RUNNING_MODAL'}
+
+        # Handle mouse release
+        elif event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+            if overlay.handle_mouse_release(context, event):
+                if context.area:
+                    context.area.tag_redraw()
+
+        # Pass through other events
+        if overlay.is_resizing:
+            # Block other events while resizing
+            return {'RUNNING_MODAL'}
+        else:
+            # Pass through when not resizing
+            return {'PASS_THROUGH'}
+
+    def invoke(self, context, event):
+        # Add modal handler to window manager
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+
 # ============================================================================
 # REGISTRATION
 # ============================================================================
@@ -379,6 +441,7 @@ classes = (
     BC_OT_ProfileView_SelectPVI,
     BC_OT_ProfileView_FitToData,
     BC_OT_ProfileView_ClearData,
+    BC_OT_ProfileView_ModalHandler,
 )
 
 

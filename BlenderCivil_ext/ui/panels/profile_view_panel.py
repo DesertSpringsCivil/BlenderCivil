@@ -51,7 +51,7 @@ class BC_PT_ProfileViewPanel(Panel):
         
         # Get overlay status
         try:
-            from ..core.profile_view_overlay import get_profile_overlay
+            from ...core.profile_view_overlay import get_profile_overlay
             overlay = get_profile_overlay()
             enabled = overlay.enabled
             num_pvis = len(overlay.data.pvis)

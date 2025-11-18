@@ -59,9 +59,18 @@ class ProfileViewOverlay:
         self.renderer = ProfileViewRenderer()
         self.draw_handle = None
         self.enabled = False
-        
+
         # Overlay dimensions
-        self.overlay_height = 200  # pixels (fixed at bottom of viewport)
+        self.overlay_height = 200  # pixels (resizable from bottom of viewport)
+
+        # Resize interaction state
+        self.is_resizing = False
+        self.hover_resize_border = False
+        self.resize_start_height = 0
+        self.resize_start_mouse_y = 0
+        self.resize_border_thickness = 8  # pixels to detect hover
+        self.min_height = 100  # minimum overlay height
+        self.max_height = 600  # maximum overlay height
     
     def enable(self, context):
         """
@@ -117,34 +126,38 @@ class ProfileViewOverlay:
     def _draw_callback(self, context):
         """
         Draw callback - invoked by Blender every frame.
-        
+
         Args:
             context: Blender context
-        
+
         Note:
             This is called automatically by Blender's draw handler system.
             Do not call directly.
         """
         if not self.enabled:
             return
-        
+
         # Get viewport dimensions
         area = context.area
         region = context.region
-        
+
         if not region or not area:
             return
-        
+
         # Set renderer region (bottom strip of viewport)
         x = 0
         y = 0
         width = region.width
         height = self.overlay_height
-        
+
         self.renderer.set_view_region(x, y, width, height)
-        
+
         # Render profile view
         self.renderer.render(self.data)
+
+        # Draw resize border indicator when hovering or resizing
+        if self.hover_resize_border or self.is_resizing:
+            self._draw_resize_border(region, height)
     
     def refresh(self, context):
         """
@@ -159,7 +172,7 @@ class ProfileViewOverlay:
     def get_status(self) -> str:
         """
         Get overlay status as string.
-        
+
         Returns:
             Status description
         """
@@ -168,6 +181,151 @@ class ProfileViewOverlay:
                    f"{len(self.data.terrain_points)} terrain pts"
         else:
             return "DISABLED"
+
+    def is_mouse_over_resize_border(self, context, mouse_x: int, mouse_y: int) -> bool:
+        """
+        Check if mouse is hovering over the resize border (top edge of overlay).
+
+        Args:
+            context: Blender context
+            mouse_x: Mouse X coordinate in region space
+            mouse_y: Mouse Y coordinate in region space
+
+        Returns:
+            True if mouse is over resize border
+        """
+        if not self.enabled:
+            return False
+
+        # The resize border is at the top edge of the overlay
+        border_y = self.overlay_height
+
+        # Check if mouse Y is within the border thickness zone
+        return abs(mouse_y - border_y) <= self.resize_border_thickness
+
+    def handle_mouse_move(self, context, event):
+        """
+        Handle mouse movement for resize interaction.
+
+        Args:
+            context: Blender context
+            event: Mouse event
+        """
+        if not self.enabled:
+            return False
+
+        mouse_x = event.mouse_region_x
+        mouse_y = event.mouse_region_y
+
+        # Update hover state
+        self.hover_resize_border = self.is_mouse_over_resize_border(context, mouse_x, mouse_y)
+
+        # Handle active resizing
+        if self.is_resizing:
+            # Calculate new height based on mouse movement
+            delta_y = mouse_y - self.resize_start_mouse_y
+            new_height = self.resize_start_height + delta_y
+
+            # Clamp to min/max
+            new_height = max(self.min_height, min(self.max_height, new_height))
+
+            self.overlay_height = new_height
+
+            # Update property if available
+            if hasattr(context.scene, 'bc_profile_view_props'):
+                context.scene.bc_profile_view_props.overlay_height = int(new_height)
+
+            # Force redraw
+            if context.area:
+                context.area.tag_redraw()
+
+            return True
+
+        # Change cursor when hovering over border
+        if self.hover_resize_border:
+            context.window.cursor_set('MOVE_Y')
+            return True
+        else:
+            context.window.cursor_set('DEFAULT')
+
+        return False
+
+    def handle_mouse_press(self, context, event):
+        """
+        Handle mouse button press for starting resize.
+
+        Args:
+            context: Blender context
+            event: Mouse event
+
+        Returns:
+            True if event was handled
+        """
+        if not self.enabled:
+            return False
+
+        if self.hover_resize_border and event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            # Start resizing
+            self.is_resizing = True
+            self.resize_start_height = self.overlay_height
+            self.resize_start_mouse_y = event.mouse_region_y
+            return True
+
+        return False
+
+    def handle_mouse_release(self, context, event):
+        """
+        Handle mouse button release for ending resize.
+
+        Args:
+            context: Blender context
+            event: Mouse event
+
+        Returns:
+            True if event was handled
+        """
+        if self.is_resizing and event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+            # End resizing
+            self.is_resizing = False
+            context.window.cursor_set('DEFAULT')
+            return True
+
+        return False
+
+    def _draw_resize_border(self, region, height):
+        """
+        Draw a visual indicator for the resize border.
+
+        Args:
+            region: Blender region
+            height: Current overlay height
+        """
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+
+        # Create a highlighted line at the top of the overlay
+        border_y = height
+        border_color = (0.3, 0.6, 1.0, 0.8) if self.is_resizing else (0.5, 0.5, 0.5, 0.6)
+
+        # Draw a thick line across the top
+        vertices = [
+            (0, border_y - 1),
+            (region.width, border_y - 1),
+            (region.width, border_y + 1),
+            (0, border_y + 1)
+        ]
+
+        indices = [(0, 1, 2), (0, 2, 3)]
+
+        shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=indices)
+
+        shader.bind()
+        shader.uniform_float("color", border_color)
+
+        gpu.state.blend_set('ALPHA')
+        batch.draw(shader)
+        gpu.state.blend_set('NONE')
 
 
 # ============================================================================
