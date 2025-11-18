@@ -429,13 +429,22 @@ class BC_OT_add_curve_dialog(bpy.types.Operator):
 
         # Get the endpoints of each tangent curve
         # A tangent curve should have vertices, we need the first and last
-        tangent1_start = tangent1.data.splines[0].bezier_points[0].co if tangent1.data.splines else None
-        tangent1_end = tangent1.data.splines[0].bezier_points[-1].co if tangent1.data.splines else None
-        tangent2_start = tangent2.data.splines[0].bezier_points[0].co if tangent2.data.splines else None
-        tangent2_end = tangent2.data.splines[0].bezier_points[-1].co if tangent2.data.splines else None
+        try:
+            if len(tangent1.data.splines) > 0 and len(tangent1.data.splines[0].bezier_points) > 0:
+                tangent1_start = tangent1.data.splines[0].bezier_points[0].co
+                tangent1_end = tangent1.data.splines[0].bezier_points[-1].co
+            else:
+                print(f"[CurveTool] Tangent1 has no bezier points")
+                return None
 
-        if not all([tangent1_start, tangent1_end, tangent2_start, tangent2_end]):
-            print(f"[CurveTool] Could not get tangent endpoints")
+            if len(tangent2.data.splines) > 0 and len(tangent2.data.splines[0].bezier_points) > 0:
+                tangent2_start = tangent2.data.splines[0].bezier_points[0].co
+                tangent2_end = tangent2.data.splines[0].bezier_points[-1].co
+            else:
+                print(f"[CurveTool] Tangent2 has no bezier points")
+                return None
+        except Exception as e:
+            print(f"[CurveTool] Error getting tangent endpoints: {e}")
             return None
 
         # Transform to world space
