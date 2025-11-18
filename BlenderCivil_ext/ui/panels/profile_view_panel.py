@@ -45,6 +45,7 @@ class BC_PT_ProfileViewPanel(Panel):
     bl_region_type = 'UI'
     bl_parent_id = "VIEW3D_PT_bc_vertical_alignment"  # Make this a sub-panel
     bl_order = 100  # Display after other vertical alignment sub-panels
+    bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):
         layout = self.layout

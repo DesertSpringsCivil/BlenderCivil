@@ -68,17 +68,8 @@ class VIEW3D_PT_bc_georeferencing(Panel):
     bl_label = "Georeferencing"
     bl_idname = "VIEW3D_PT_bc_georeferencing"
     bl_options = {'DEFAULT_CLOSED'}
-    
-    def draw_header(self, context):
-        layout = self.layout
-        scene = context.scene
-        georef = scene.bc_georef
-        
-        # Status indicator icon
-        if georef.is_georeferenced:
-            layout.label(text="", icon='CHECKMARK')
-        else:
-            layout.label(text="", icon='QUESTION')
+
+    # Header removed - text-only panel label
     
     def draw(self, context):
         layout = self.layout

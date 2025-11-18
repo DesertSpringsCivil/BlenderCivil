@@ -82,6 +82,7 @@ class VIEW3D_PT_blendercivil_dependencies(bpy.types.Panel):
     bl_category = 'BlenderCivil'
     bl_label = 'Dependencies'
     bl_order = 0
+    bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):
         layout = self.layout

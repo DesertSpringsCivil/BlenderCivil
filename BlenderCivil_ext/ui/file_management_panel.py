@@ -38,6 +38,7 @@ class VIEW3D_PT_file_management(Panel):
     bl_region_type = 'UI'
     bl_category = "BlenderCivil"
     bl_order = 0  # Show at top
+    bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout
