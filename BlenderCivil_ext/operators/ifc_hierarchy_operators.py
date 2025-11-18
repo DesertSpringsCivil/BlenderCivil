@@ -63,7 +63,6 @@ class BC_OT_new_ifc(Operator):
             print("✅ IFC SPATIAL HIERARCHY CREATED")
             print("="*60)
             print(f"Schema: {result['ifc_file'].schema}")
-            print(f"Entities: {len(result['ifc_file'])}")
             print(f"\nProject: {result['project'].Name}")
             print(f"Site: {result['site'].Name}")
             print(f"Road: {result['road'].Name}")

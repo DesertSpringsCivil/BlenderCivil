@@ -428,20 +428,38 @@ class BC_OT_add_curve_dialog(bpy.types.Operator):
             return None
 
         # Get the endpoints of each tangent curve
-        # A tangent curve should have vertices, we need the first and last
+        # Tangents use POLY splines, so we need to access .points, not .bezier_points
         try:
-            if len(tangent1.data.splines) > 0 and len(tangent1.data.splines[0].bezier_points) > 0:
-                tangent1_start = tangent1.data.splines[0].bezier_points[0].co
-                tangent1_end = tangent1.data.splines[0].bezier_points[-1].co
+            if len(tangent1.data.splines) > 0:
+                spline1 = tangent1.data.splines[0]
+                # Check if it's a POLY spline (tangents) or BEZIER spline (curves)
+                if spline1.type == 'POLY' and len(spline1.points) > 0:
+                    tangent1_start = spline1.points[0].co.xyz
+                    tangent1_end = spline1.points[-1].co.xyz
+                elif spline1.type == 'BEZIER' and len(spline1.bezier_points) > 0:
+                    tangent1_start = spline1.bezier_points[0].co
+                    tangent1_end = spline1.bezier_points[-1].co
+                else:
+                    print(f"[CurveTool] Tangent1 has no points (type: {spline1.type})")
+                    return None
             else:
-                print(f"[CurveTool] Tangent1 has no bezier points")
+                print(f"[CurveTool] Tangent1 has no splines")
                 return None
 
-            if len(tangent2.data.splines) > 0 and len(tangent2.data.splines[0].bezier_points) > 0:
-                tangent2_start = tangent2.data.splines[0].bezier_points[0].co
-                tangent2_end = tangent2.data.splines[0].bezier_points[-1].co
+            if len(tangent2.data.splines) > 0:
+                spline2 = tangent2.data.splines[0]
+                # Check if it's a POLY spline (tangents) or BEZIER spline (curves)
+                if spline2.type == 'POLY' and len(spline2.points) > 0:
+                    tangent2_start = spline2.points[0].co.xyz
+                    tangent2_end = spline2.points[-1].co.xyz
+                elif spline2.type == 'BEZIER' and len(spline2.bezier_points) > 0:
+                    tangent2_start = spline2.bezier_points[0].co
+                    tangent2_end = spline2.bezier_points[-1].co
+                else:
+                    print(f"[CurveTool] Tangent2 has no points (type: {spline2.type})")
+                    return None
             else:
-                print(f"[CurveTool] Tangent2 has no bezier points")
+                print(f"[CurveTool] Tangent2 has no splines")
                 return None
         except Exception as e:
             print(f"[CurveTool] Error getting tangent endpoints: {e}")
@@ -455,29 +473,42 @@ class BC_OT_add_curve_dialog(bpy.types.Operator):
 
         # Find which PI is at the junction between the two tangents
         # The shared PI should be close to one endpoint of each tangent
-        tolerance = 0.01  # 1cm tolerance
+        tolerance = 1.0  # 1 meter tolerance (increased for floating point precision)
+
+        # Debug output
+        print(f"[CurveTool] Searching for shared PI between {tangent1.name} and {tangent2.name}")
+        print(f"[CurveTool] Tangent1 endpoints: {tangent1_start_world} to {tangent1_end_world}")
+        print(f"[CurveTool] Tangent2 endpoints: {tangent2_start_world} to {tangent2_end_world}")
 
         for pi_obj in pi_objects:
             pi_location = pi_obj.matrix_world.translation
 
+            # Calculate distances
+            dist_t1_start = (pi_location - tangent1_start_world).length
+            dist_t1_end = (pi_location - tangent1_end_world).length
+            dist_t2_start = (pi_location - tangent2_start_world).length
+            dist_t2_end = (pi_location - tangent2_end_world).length
+
             # Check if this PI is at an endpoint of both tangents
-            is_tangent1_endpoint = ((pi_location - tangent1_start_world).length < tolerance or
-                                   (pi_location - tangent1_end_world).length < tolerance)
-            is_tangent2_endpoint = ((pi_location - tangent2_start_world).length < tolerance or
-                                   (pi_location - tangent2_end_world).length < tolerance)
+            is_tangent1_endpoint = (dist_t1_start < tolerance or dist_t1_end < tolerance)
+            is_tangent2_endpoint = (dist_t2_start < tolerance or dist_t2_end < tolerance)
+
+            # Debug output for each PI
+            print(f"[CurveTool] {pi_obj.name}: t1_start={dist_t1_start:.3f}m, t1_end={dist_t1_end:.3f}m, "
+                  f"t2_start={dist_t2_start:.3f}m, t2_end={dist_t2_end:.3f}m")
 
             if is_tangent1_endpoint and is_tangent2_endpoint:
                 # Found the shared PI! Extract its index from the name
                 try:
                     # PI_002 -> index 2
                     pi_index = int(pi_obj.name.split('_')[-1])
-                    print(f"[CurveTool] Found shared PI: {pi_obj.name} at index {pi_index}")
+                    print(f"[CurveTool] ✓ Found shared PI: {pi_obj.name} at index {pi_index}")
                     return pi_index
                 except:
                     print(f"[CurveTool] Could not parse PI index from name: {pi_obj.name}")
                     return None
 
-        print(f"[CurveTool] No shared PI found between tangents")
+        print(f"[CurveTool] ✗ No shared PI found between tangents")
         return None
 
     def create_curve(self, tangent1, tangent2, radius):
