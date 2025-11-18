@@ -402,23 +402,89 @@ class BC_OT_add_curve_dialog(bpy.types.Operator):
         layout.separator()
         layout.prop(self, "radius")
 
+    def _find_shared_pi(self, tangent1, tangent2):
+        """Find the PI index shared by two tangent curve objects
+
+        Args:
+            tangent1, tangent2: Blender curve objects representing tangents
+
+        Returns:
+            PI index (int) or None if not found
+        """
+        import bpy
+        from mathutils import Vector
+
+        # Get the alignment parent object
+        alignment = tangent1.parent
+        if not alignment or tangent2.parent != alignment:
+            print(f"[CurveTool] Tangents don't share the same parent alignment")
+            return None
+
+        # Find all PI objects in the alignment
+        pi_objects = [obj for obj in alignment.children if obj.name.startswith("PI_")]
+
+        if not pi_objects:
+            print(f"[CurveTool] No PI objects found in alignment")
+            return None
+
+        # Get the endpoints of each tangent curve
+        # A tangent curve should have vertices, we need the first and last
+        tangent1_start = tangent1.data.splines[0].bezier_points[0].co if tangent1.data.splines else None
+        tangent1_end = tangent1.data.splines[0].bezier_points[-1].co if tangent1.data.splines else None
+        tangent2_start = tangent2.data.splines[0].bezier_points[0].co if tangent2.data.splines else None
+        tangent2_end = tangent2.data.splines[0].bezier_points[-1].co if tangent2.data.splines else None
+
+        if not all([tangent1_start, tangent1_end, tangent2_start, tangent2_end]):
+            print(f"[CurveTool] Could not get tangent endpoints")
+            return None
+
+        # Transform to world space
+        tangent1_start_world = tangent1.matrix_world @ tangent1_start
+        tangent1_end_world = tangent1.matrix_world @ tangent1_end
+        tangent2_start_world = tangent2.matrix_world @ tangent2_start
+        tangent2_end_world = tangent2.matrix_world @ tangent2_end
+
+        # Find which PI is at the junction between the two tangents
+        # The shared PI should be close to one endpoint of each tangent
+        tolerance = 0.01  # 1cm tolerance
+
+        for pi_obj in pi_objects:
+            pi_location = pi_obj.matrix_world.translation
+
+            # Check if this PI is at an endpoint of both tangents
+            is_tangent1_endpoint = ((pi_location - tangent1_start_world).length < tolerance or
+                                   (pi_location - tangent1_end_world).length < tolerance)
+            is_tangent2_endpoint = ((pi_location - tangent2_start_world).length < tolerance or
+                                   (pi_location - tangent2_end_world).length < tolerance)
+
+            if is_tangent1_endpoint and is_tangent2_endpoint:
+                # Found the shared PI! Extract its index from the name
+                try:
+                    # PI_002 -> index 2
+                    pi_index = int(pi_obj.name.split('_')[-1])
+                    print(f"[CurveTool] Found shared PI: {pi_obj.name} at index {pi_index}")
+                    return pi_index
+                except:
+                    print(f"[CurveTool] Could not parse PI index from name: {pi_obj.name}")
+                    return None
+
+        print(f"[CurveTool] No shared PI found between tangents")
+        return None
+
     def create_curve(self, tangent1, tangent2, radius):
         """Create curve between two tangents by integrating with alignment system"""
         import bpy
         import math
 
-        # Extract segment numbers from tangent names
-        try:
-            seg1_num = int(tangent1.name.split('_')[-1])
-            seg2_num = int(tangent2.name.split('_')[-1])
-        except:
-            print(f"[CurveTool] Could not parse segment numbers from tangent names")
+        # Find the shared PI between the two tangents
+        # Look at the tangent endpoints to find which PI they share
+        pi_index = self._find_shared_pi(tangent1, tangent2)
+
+        if pi_index is None:
+            print(f"[CurveTool] Could not find shared PI between {tangent1.name} and {tangent2.name}")
             return False
 
-        # The PI index is the shared PI between the two tangents
-        # Tangent_0 goes from PI_0 to PI_1, Tangent_1 goes from PI_1 to PI_2
-        # So if we have Tangent_0 and Tangent_1, the shared PI is PI_1
-        pi_index = max(seg1_num, seg2_num)
+        print(f"[CurveTool] Found shared PI at index {pi_index}")
 
         # Get the alignment object from the registry
         from ..core.native_ifc_manager import NativeIfcManager
