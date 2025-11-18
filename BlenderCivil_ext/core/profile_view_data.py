@@ -215,28 +215,40 @@ class ProfileViewData:
     def update_view_extents(self, padding: float = 10.0):
         """
         Automatically calculate view extents from data.
-        
+
         Args:
             padding: Extra space around data (m)
         """
         all_elevations = []
         all_stations = []
-        
+
         # Collect all points
         for points in [self.terrain_points, self.alignment_points, self.pvis]:
             for pt in points:
                 all_stations.append(pt.station)
                 all_elevations.append(pt.elevation)
-        
+
         if not all_stations:
             # No data, use defaults
             return
-        
+
         # Calculate extents with padding
         self.station_min = min(all_stations) - padding
         self.station_max = max(all_stations) + padding
         self.elevation_min = min(all_elevations) - padding
         self.elevation_max = max(all_elevations) + padding
+
+        # Sync to UI properties if available
+        try:
+            import bpy
+            if hasattr(bpy.context.scene, 'bc_profile_view_props'):
+                props = bpy.context.scene.bc_profile_view_props
+                props.station_min = self.station_min
+                props.station_max = self.station_max
+                props.elevation_min = self.elevation_min
+                props.elevation_max = self.elevation_max
+        except:
+            pass  # Not in Blender context
     
     def get_statistics(self) -> Dict:
         """

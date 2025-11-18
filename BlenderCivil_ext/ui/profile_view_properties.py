@@ -38,6 +38,44 @@ from bpy.types import PropertyGroup
 from bpy.props import BoolProperty, FloatProperty, IntProperty
 
 
+def _update_view_extents(self, context):
+    """
+    Update callback for view extents properties.
+    Synchronizes UI property values to ProfileViewData and triggers viewport refresh.
+    """
+    # Get the profile overlay and update view extents
+    try:
+        from ..core.profile_view_overlay import get_profile_overlay
+        overlay = get_profile_overlay()
+
+        # Sync property values to the data object
+        overlay.data.station_min = self.station_min
+        overlay.data.station_max = self.station_max
+        overlay.data.elevation_min = self.elevation_min
+        overlay.data.elevation_max = self.elevation_max
+
+        # Refresh viewport if enabled
+        if overlay.enabled:
+            overlay.refresh(context)
+    except:
+        pass  # Overlay not available yet
+
+
+def _update_display_toggle(self, context):
+    """
+    Update callback for display toggle properties.
+    Triggers viewport refresh when visibility settings change.
+    """
+    # Get the profile overlay and refresh viewport
+    try:
+        from ..core.profile_view_overlay import get_profile_overlay
+        overlay = get_profile_overlay()
+        if overlay.enabled:
+            overlay.refresh(context)
+    except:
+        pass  # Overlay not available yet
+
+
 class BC_ProfileViewProperties(PropertyGroup):
     """
     Properties for profile view display settings.
@@ -48,31 +86,36 @@ class BC_ProfileViewProperties(PropertyGroup):
     show_terrain: BoolProperty(
         name="Show Terrain",
         description="Display terrain profile",
-        default=True
+        default=True,
+        update=_update_display_toggle
     )
-    
+
     show_alignment: BoolProperty(
         name="Show Alignment",
         description="Display vertical alignment profile",
-        default=True
+        default=True,
+        update=_update_display_toggle
     )
-    
+
     show_pvis: BoolProperty(
         name="Show PVIs",
         description="Display PVI control points",
-        default=True
+        default=True,
+        update=_update_display_toggle
     )
-    
+
     show_grades: BoolProperty(
         name="Show Grades",
         description="Display grade lines between PVIs",
-        default=True
+        default=True,
+        update=_update_display_toggle
     )
-    
+
     show_grid: BoolProperty(
         name="Show Grid",
         description="Display grid lines and labels",
-        default=True
+        default=True,
+        update=_update_display_toggle
     )
     
     # View extents
@@ -80,28 +123,32 @@ class BC_ProfileViewProperties(PropertyGroup):
         name="Station Min",
         description="Minimum station value (m)",
         default=0.0,
-        unit='LENGTH'
+        unit='LENGTH',
+        update=_update_view_extents
     )
-    
+
     station_max: FloatProperty(
         name="Station Max",
         description="Maximum station value (m)",
         default=1000.0,
-        unit='LENGTH'
+        unit='LENGTH',
+        update=_update_view_extents
     )
-    
+
     elevation_min: FloatProperty(
         name="Elevation Min",
         description="Minimum elevation value (m)",
         default=0.0,
-        unit='LENGTH'
+        unit='LENGTH',
+        update=_update_view_extents
     )
-    
+
     elevation_max: FloatProperty(
         name="Elevation Max",
         description="Maximum elevation value (m)",
         default=100.0,
-        unit='LENGTH'
+        unit='LENGTH',
+        update=_update_view_extents
     )
     
     # Grid settings
@@ -110,15 +157,17 @@ class BC_ProfileViewProperties(PropertyGroup):
         description="Spacing between vertical grid lines (m)",
         default=50.0,
         min=1.0,
-        unit='LENGTH'
+        unit='LENGTH',
+        update=_update_display_toggle
     )
-    
+
     elevation_grid_spacing: FloatProperty(
         name="Elevation Grid Spacing",
         description="Spacing between horizontal grid lines (m)",
         default=5.0,
         min=0.1,
-        unit='LENGTH'
+        unit='LENGTH',
+        update=_update_display_toggle
     )
     
     # Overlay settings
