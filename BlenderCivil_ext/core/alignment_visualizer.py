@@ -218,15 +218,21 @@ class AlignmentVisualizer:
             spline = curve_data.splines.new('POLY')
             num_points = 32
             spline.points.add(num_points - 1)
-            
+
             start = params.StartPoint.Coordinates
             start_dir = params.StartDirection
             radius = abs(params.StartRadiusOfCurvature)
             arc_length = params.SegmentLength
             angle_span = arc_length / radius
-            
+
             # Determine turn direction from sign of radius
-            if params.StartRadiusOfCurvature < 0:
+            is_right_turn = params.StartRadiusOfCurvature < 0
+
+            # Debug output
+            turn_type = "RIGHT" if is_right_turn else "LEFT"
+            print(f"[Visualizer] Curve {ifc_segment.Name}: {turn_type} turn, R={params.StartRadiusOfCurvature:.2f}, start=({start[0]:.2f},{start[1]:.2f})")
+
+            if is_right_turn:
                 # Right turn (clockwise)
                 center_x = start[0] + radius * math.sin(start_dir)
                 center_y = start[1] - radius * math.cos(start_dir)
@@ -235,13 +241,23 @@ class AlignmentVisualizer:
                 # Left turn (counterclockwise)
                 center_x = start[0] - radius * math.sin(start_dir)
                 center_y = start[1] + radius * math.cos(start_dir)
-            
+
             # Generate arc points
+            # CRITICAL: Tangent-to-radius conversion differs by turn direction!
             for i in range(num_points):
                 t = i / (num_points - 1)
                 angle = start_dir + angle_span * t
-                x = center_x + radius * math.cos(angle - math.pi/2)
-                y = center_y + radius * math.sin(angle - math.pi/2)
+
+                # Convert tangent bearing to radial angle
+                if is_right_turn:
+                    # Right turn: radius is 90° CCW from tangent
+                    radial_angle = angle + math.pi/2
+                else:
+                    # Left turn: radius is 90° CW from tangent
+                    radial_angle = angle - math.pi/2
+
+                x = center_x + radius * math.cos(radial_angle)
+                y = center_y + radius * math.sin(radial_angle)
                 spline.points[i].co = (x, y, 0, 1)
         
         # Create object
@@ -280,7 +296,7 @@ class AlignmentVisualizer:
     
     def clear_visualizations(self):
         """Clear all existing visualizations"""
-        # Remove all objects in collection
+        # Remove all objects in tracked lists
         for obj in self.pi_objects + self.segment_objects:
             try:
                 if obj and obj.name in bpy.data.objects:
@@ -291,6 +307,20 @@ class AlignmentVisualizer:
 
         self.pi_objects.clear()
         self.segment_objects.clear()
+
+        # CRITICAL: Also remove any orphaned objects by name pattern
+        # This handles the case where we're reloading and old objects exist
+        # but aren't in our tracked lists
+        if self.alignment_empty:
+            try:
+                # Remove all children of the alignment empty
+                for child in list(self.alignment_empty.children):
+                    try:
+                        bpy.data.objects.remove(child, do_unlink=True)
+                    except:
+                        pass
+            except (ReferenceError, AttributeError):
+                pass
 
         print(f"[Visualizer] Cleared visualizations")
     

@@ -605,37 +605,156 @@ class BC_OT_edit_curve_radius(bpy.types.Operator):
     bl_idname = "bc.edit_curve_radius"
     bl_label = "Edit Curve Radius"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
     radius: FloatProperty(
         name="New Radius",
         default=100.0,
         min=0.1,
         description="New curve radius in meters"
     )
-    
+
+    _current_radius: FloatProperty(default=0.0)  # Store current radius for display
+
     def execute(self, context):
         obj = context.active_object
-        
+
         if not obj or obj.type != 'CURVE':
             self.report({'ERROR'}, "Select a curve segment")
             return {'CANCELLED'}
-        
-        # TODO INTEGRATION:
-        # 1. Get IFC curve entity
-        # 2. Update radius
-        # 3. Recalculate curve geometry
-        # 4. Update visualization
-        
-        self.report({'INFO'}, f"Updated curve radius to {self.radius:.1f}m")
+
+        # Check if it's a curve (not a tangent)
+        if "Curve" not in obj.name:
+            self.report({'ERROR'}, "Select a curve segment (not a tangent)")
+            return {'CANCELLED'}
+
+        # Get IFC curve entity and update radius
+        from ..core.native_ifc_manager import NativeIfcManager
+        from ..core import alignment_registry
+        from ..ui.alignment_properties import get_active_alignment_ifc
+
+        ifc = NativeIfcManager.get_file()
+        if not ifc:
+            self.report({'ERROR'}, "No IFC file loaded")
+            return {'CANCELLED'}
+
+        # Get IFC entity for this curve object
+        if "ifc_definition_id" not in obj:
+            self.report({'ERROR'}, "Curve is not linked to IFC")
+            return {'CANCELLED'}
+
+        ifc_id = obj["ifc_definition_id"]
+        curve_entity = ifc.by_id(ifc_id)
+
+        if not curve_entity:
+            self.report({'ERROR'}, "Could not find IFC curve entity")
+            return {'CANCELLED'}
+
+        # Extract the PI index and alignment from the curve
+        # Find which PI this curve belongs to by checking the PI objects
+        alignment_empty = obj.parent
+        if not alignment_empty:
+            self.report({'ERROR'}, "Curve has no parent alignment")
+            return {'CANCELLED'}
+
+        # Find the PI that has this curve
+        pi_objects = [child for child in alignment_empty.children if child.name.startswith("PI_")]
+
+        # Get the active alignment
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if not active_alignment_ifc:
+            self.report({'ERROR'}, "No active alignment")
+            return {'CANCELLED'}
+
+        # Get alignment object from registry
+        alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+        if not alignment_obj:
+            self.report({'ERROR'}, "Could not find alignment in registry")
+            return {'CANCELLED'}
+
+        # Find which PI has a curve attached by checking the name
+        # Curve_2 means it's at PI index 2
+        try:
+            curve_name = obj.name
+            pi_index = int(curve_name.split('_')[-1].split('.')[0])  # Handle .001 suffixes
+            print(f"[EditCurve] Editing curve at PI {pi_index}, new radius: {self.radius:.1f}m")
+        except:
+            self.report({'ERROR'}, "Could not determine PI index from curve name")
+            return {'CANCELLED'}
+
+        # Check if this PI exists and has a curve
+        if pi_index >= len(alignment_obj.pis):
+            self.report({'ERROR'}, f"PI {pi_index} does not exist")
+            return {'CANCELLED'}
+
+        pi_data = alignment_obj.pis[pi_index]
+        if 'curve' not in pi_data:
+            self.report({'ERROR'}, f"PI {pi_index} has no curve")
+            return {'CANCELLED'}
+
+        # Update the radius in the PI's curve data
+        old_radius = pi_data['curve']['radius']
+        pi_data['curve']['radius'] = self.radius
+
+        print(f"[EditCurve] Updated radius from {old_radius:.1f}m to {self.radius:.1f}m")
+
+        # Regenerate segments with the new curve data
+        alignment_obj.regenerate_segments_with_curves()
+
+        # Update visualization
+        if hasattr(alignment_obj, 'visualizer') and alignment_obj.visualizer:
+            alignment_obj.visualizer.update_all()
+            print(f"[EditCurve] Updated visualization")
+
+        self.report({'INFO'}, f"Updated curve radius: {old_radius:.1f}m → {self.radius:.1f}m")
         return {'FINISHED'}
-    
+
     def invoke(self, context, event):
         obj = context.active_object
-        
-        # Get current radius from IFC if available
-        # self.radius = get_current_radius(obj)
-        
+
+        if not obj or obj.type != 'CURVE':
+            self.report({'ERROR'}, "Select a curve segment")
+            return {'CANCELLED'}
+
+        # Check if it's a curve
+        if "Curve" not in obj.name:
+            self.report({'ERROR'}, "Select a curve segment (not a tangent)")
+            return {'CANCELLED'}
+
+        # Get current radius from IFC entity
+        from ..core.native_ifc_manager import NativeIfcManager
+
+        ifc = NativeIfcManager.get_file()
+        if ifc and "ifc_definition_id" in obj:
+            try:
+                ifc_id = obj["ifc_definition_id"]
+                curve_entity = ifc.by_id(ifc_id)
+
+                if curve_entity and hasattr(curve_entity, 'DesignParameters'):
+                    params = curve_entity.DesignParameters
+                    if hasattr(params, 'StartRadiusOfCurvature'):
+                        # Get absolute value of radius (sign indicates turn direction)
+                        current_radius = abs(params.StartRadiusOfCurvature)
+                        self.radius = current_radius
+                        self._current_radius = current_radius
+                        print(f"[EditCurve] Current radius: {current_radius:.1f}m")
+                    else:
+                        print(f"[EditCurve] Curve entity has no radius")
+                else:
+                    print(f"[EditCurve] Could not get curve parameters")
+            except Exception as e:
+                print(f"[EditCurve] Error getting current radius: {e}")
+
         return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        """Draw dialog UI"""
+        layout = self.layout
+
+        if self._current_radius > 0:
+            layout.label(text=f"Current Radius: {self._current_radius:.1f}m")
+            layout.separator()
+
+        layout.prop(self, "radius")
 
 
 # Registration

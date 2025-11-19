@@ -296,6 +296,19 @@ class NativeIfcManager:
             except Exception as e:
                 print(f"   ⚠️ Failed to load alignment {alignment_entity.Name}: {str(e)}")
 
+        # Set first alignment as active if any were loaded
+        if alignments:
+            import bpy
+            from ..ui.alignment_properties import set_active_alignment, refresh_alignment_list
+
+            # Refresh the alignment list in UI
+            if hasattr(bpy.context, 'scene'):
+                refresh_alignment_list(bpy.context)
+
+                # Set first alignment as active
+                set_active_alignment(bpy.context, alignments[0])
+                print(f"   ✅ Set active alignment: {alignments[0].Name}")
+
         print(f"✅ Loaded IFC file: {filepath}")
         print(f"   Entities: {len(cls.file.by_type('IfcRoot'))}")
         print(f"   Alignments: {len(alignments)}")
