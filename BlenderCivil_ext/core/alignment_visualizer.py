@@ -161,10 +161,8 @@ class AlignmentVisualizer:
         # Always GREEN for PIs (they're just intersection points)
         obj.color = (0.0, 1.0, 0.0, 1.0)
 
-        # Link to collection (already validated by _ensure_valid_collection)
-        self.collection.objects.link(obj)
-
-        # Parent to alignment empty for hierarchy organization
+        # Parent to alignment empty for hierarchy organization FIRST
+        # (must be done before linking to collection for proper Outliner hierarchy)
         if self.alignment_empty:
             try:
                 _ = self.alignment_empty.name
@@ -172,6 +170,9 @@ class AlignmentVisualizer:
             except (ReferenceError, AttributeError):
                 # Alignment empty was deleted, skip parenting
                 pass
+
+        # Link to collection AFTER parenting (already validated by _ensure_valid_collection)
+        self.collection.objects.link(obj)
 
         self.pi_objects.append(obj)
 
@@ -258,10 +259,8 @@ class AlignmentVisualizer:
         else:
             obj.color = (1.0, 0.3, 0.3, 1.0)  # Red for curves
 
-        # Link to collection (already validated by _ensure_valid_collection)
-        self.collection.objects.link(obj)
-
-        # Parent to alignment empty for hierarchy organization
+        # Parent to alignment empty for hierarchy organization FIRST
+        # (must be done before linking to collection for proper Outliner hierarchy)
         if self.alignment_empty:
             try:
                 _ = self.alignment_empty.name
@@ -269,6 +268,9 @@ class AlignmentVisualizer:
             except (ReferenceError, AttributeError):
                 # Alignment empty was deleted, skip parenting
                 pass
+
+        # Link to collection AFTER parenting (already validated by _ensure_valid_collection)
+        self.collection.objects.link(obj)
 
         self.segment_objects.append(obj)
 
