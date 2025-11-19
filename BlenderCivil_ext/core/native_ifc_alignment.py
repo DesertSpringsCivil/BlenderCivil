@@ -66,14 +66,19 @@ class SimpleVector:
 class NativeIfcAlignment:
     """Native IFC alignment with PI-driven design - PIs are pure intersection points"""
     
-    def __init__(self, ifc_file, name="New Alignment"):
+    def __init__(self, ifc_file, name="New Alignment", alignment_entity=None):
         self.ifc = ifc_file
         self.alignment = None
         self.horizontal = None
         self.pis = []  # PIs have NO radius property!
         self.segments = []
 
-        self.create_alignment_structure(name)
+        if alignment_entity:
+            # Load from existing IFC alignment
+            self.load_from_ifc(alignment_entity)
+        else:
+            # Create new alignment structure
+            self.create_alignment_structure(name)
 
         # Register for updates
         self.auto_update = True
@@ -94,16 +99,150 @@ class NativeIfcAlignment:
             GlobalId=ifcopenshell.guid.new(),
             Name=name,
             PredefinedType="USERDEFINED")
-        
+
         self.horizontal = self.ifc.create_entity("IfcAlignmentHorizontal",
             GlobalId=ifcopenshell.guid.new())
-        
+
         self.ifc.create_entity("IfcRelNests",
             GlobalId=ifcopenshell.guid.new(),
             Name="AlignmentToHorizontal",
             RelatingObject=self.alignment,
             RelatedObjects=[self.horizontal])
-    
+
+    def load_from_ifc(self, alignment_entity):
+        """
+        Load alignment from existing IFC entity.
+        Reconstructs PIs and segments from saved IFC data.
+
+        Args:
+            alignment_entity: IfcAlignment entity from loaded IFC file
+        """
+        self.alignment = alignment_entity
+
+        # Find horizontal alignment
+        for rel in alignment_entity.IsNestedBy or []:
+            for obj in rel.RelatedObjects:
+                if obj.is_a("IfcAlignmentHorizontal"):
+                    self.horizontal = obj
+                    break
+
+        if not self.horizontal:
+            print(f"[Alignment] Warning: No horizontal alignment found for {alignment_entity.Name}")
+            return
+
+        # Load segments
+        segments = []
+        for rel in self.horizontal.IsNestedBy or []:
+            for obj in rel.RelatedObjects:
+                if obj.is_a("IfcAlignmentSegment"):
+                    segments.append(obj)
+
+        # Sort segments by order (if they have sequence numbers in names)
+        # For now, trust the order from IFC file
+        self.segments = segments
+
+        # Reconstruct PIs from segments
+        self._reconstruct_pis_from_segments()
+
+        print(f"[Alignment] Loaded '{alignment_entity.Name}': {len(self.pis)} PIs, {len(self.segments)} segments")
+
+    def _reconstruct_pis_from_segments(self):
+        """
+        Reconstruct PI list from IFC segments.
+
+        Strategy:
+        - Start with the first segment's start point as PI 0
+        - For each LINE segment, add its end point as next PI
+        - For each CIRCULARARC segment, track curve data but don't add PI
+        - Curves are inserted AT the PI between two tangents
+        """
+        if not self.segments:
+            return
+
+        self.pis = []
+        pi_index = 0
+
+        for i, segment in enumerate(self.segments):
+            design_params = segment.DesignParameters
+
+            if not design_params:
+                continue
+
+            # Get segment type and parameters
+            seg_type = design_params.PredefinedType
+            start_point = design_params.StartPoint
+            start_pos = SimpleVector(start_point.Coordinates[0], start_point.Coordinates[1])
+
+            # First segment - add start point as PI 0
+            if i == 0:
+                pi_data = {
+                    'id': pi_index,
+                    'position': start_pos,
+                    'ifc_point': start_point
+                }
+                self.pis.append(pi_data)
+                pi_index += 1
+
+            if seg_type == "LINE":
+                # Calculate end point from start + direction + length
+                direction = design_params.StartDirection
+                length = design_params.SegmentLength
+
+                end_x = start_pos.x + length * math.cos(direction)
+                end_y = start_pos.y + length * math.sin(direction)
+                end_pos = SimpleVector(end_x, end_y)
+
+                # Check if next segment is a curve
+                # If so, this end point is a PI with a curve
+                has_curve_at_end = False
+                if i + 1 < len(self.segments):
+                    next_seg = self.segments[i + 1]
+                    if next_seg.DesignParameters and next_seg.DesignParameters.PredefinedType == "CIRCULARARC":
+                        has_curve_at_end = True
+
+                # Create PI at end of tangent
+                pi_data = {
+                    'id': pi_index,
+                    'position': end_pos,
+                    'ifc_point': self.ifc.create_entity("IfcCartesianPoint",
+                        Coordinates=[float(end_x), float(end_y)])
+                }
+
+                # If next segment is curve, attach curve data to this PI
+                if has_curve_at_end:
+                    next_seg = self.segments[i + 1]
+                    curve_params = next_seg.DesignParameters
+
+                    # Extract curve geometry
+                    radius = abs(curve_params.StartRadiusOfCurvature)
+                    arc_length = curve_params.SegmentLength
+                    start_dir = curve_params.StartDirection
+
+                    # Calculate BC, EC, and other curve properties
+                    # BC is the start of the curve (end of current tangent)
+                    bc = start_pos + SimpleVector(length * math.cos(direction), length * math.sin(direction))
+
+                    # EC is start of curve + arc direction
+                    # For now, store basic curve info
+                    pi_data['curve'] = {
+                        'bc': bc,
+                        'ec': end_pos,  # Will be recalculated when regenerating
+                        'radius': radius,
+                        'arc_length': arc_length,
+                        'start_direction': start_dir,
+                        'deflection': arc_length / radius  # Approximate
+                    }
+
+                self.pis.append(pi_data)
+                pi_index += 1
+
+            elif seg_type == "CIRCULARARC":
+                # Curve segment - already handled by previous LINE segment
+                # The curve data is attached to the PI before the curve
+                pass
+
+        print(f"[Alignment] Reconstructed {len(self.pis)} PIs from {len(self.segments)} segments")
+
     def add_pi(self, x, y):
         """Add PI to alignment - Pure intersection point, NO RADIUS!"""
         pi_data = {

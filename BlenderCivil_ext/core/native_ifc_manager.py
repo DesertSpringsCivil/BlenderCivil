@@ -263,16 +263,43 @@ class NativeIfcManager:
         
         # Create Blender visualization
         cls._create_blender_hierarchy()
-        
+
         # Load existing alignments
+        from .native_ifc_alignment import NativeIfcAlignment
+        from .alignment_visualizer import AlignmentVisualizer
+        from .alignment_registry import register_alignment, register_visualizer
+
         alignments = cls.file.by_type("IfcAlignment")
-        for alignment in alignments:
-            # TODO: Create visualization for each alignment
-            pass
-        
+        for alignment_entity in alignments:
+            # Reconstruct alignment object from IFC data
+            try:
+                alignment_obj = NativeIfcAlignment(
+                    cls.file,
+                    alignment_entity=alignment_entity
+                )
+
+                # Register in instance registry
+                register_alignment(alignment_obj)
+
+                # Create visualizer and store reference
+                visualizer = AlignmentVisualizer(alignment_obj)
+                register_visualizer(visualizer, alignment_entity.GlobalId)
+
+                # Attach visualizer to alignment object for update system
+                alignment_obj.visualizer = visualizer
+
+                # Create Blender visualizations for all PIs and segments
+                visualizer.update_visualizations()
+
+                print(f"   ✅ Loaded alignment: {alignment_entity.Name} ({len(alignment_obj.pis)} PIs, {len(alignment_obj.segments)} segments)")
+
+            except Exception as e:
+                print(f"   ⚠️ Failed to load alignment {alignment_entity.Name}: {str(e)}")
+
         print(f"✅ Loaded IFC file: {filepath}")
         print(f"   Entities: {len(cls.file.by_type('IfcRoot'))}")
-        
+        print(f"   Alignments: {len(alignments)}")
+
         return cls.file
     
     @classmethod
