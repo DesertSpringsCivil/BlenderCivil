@@ -85,6 +85,13 @@ class NativeIfcAlignment:
         from .complete_update_system import register_alignment
         register_alignment(self)
 
+    @property
+    def name(self):
+        """Get alignment name from IFC entity."""
+        if self.alignment:
+            return self.alignment.Name
+        return "Unnamed Alignment"
+
     def __del__(self):
         """Cleanup when alignment is deleted."""
         try:
@@ -150,96 +157,133 @@ class NativeIfcAlignment:
         """
         Reconstruct PI list from IFC segments.
 
+        CRITICAL: PIs are at the THEORETICAL INTERSECTION of tangent lines,
+        not at BC/EC points!
+
         Strategy:
-        - Start with the first segment's start point as PI 0
-        - For each LINE segment, add its end point as next PI
-        - For each CIRCULARARC segment, track curve data but don't add PI
-        - Curves are inserted AT the PI between two tangents
+        - Group segments into pattern: [LINE, (optional CURVE), LINE, ...]
+        - Calculate PI as intersection of tangent bearings
+        - Attach curve data to interior PIs
         """
         if not self.segments:
             return
 
         self.pis = []
-        pi_index = 0
 
-        for i, segment in enumerate(self.segments):
+        # Parse segments into tangent/curve groups
+        i = 0
+        while i < len(self.segments):
+            segment = self.segments[i]
             design_params = segment.DesignParameters
 
             if not design_params:
+                i += 1
                 continue
 
-            # Get segment type and parameters
-            seg_type = design_params.PredefinedType
-            start_point = design_params.StartPoint
-            start_pos = SimpleVector(start_point.Coordinates[0], start_point.Coordinates[1])
-
-            # First segment - add start point as PI 0
-            if i == 0:
-                pi_data = {
-                    'id': pi_index,
-                    'position': start_pos,
-                    'ifc_point': start_point
-                }
-                self.pis.append(pi_data)
-                pi_index += 1
-
-            if seg_type == "LINE":
-                # Calculate end point from start + direction + length
+            if design_params.PredefinedType == "LINE":
+                # This is a tangent segment
                 direction = design_params.StartDirection
+                start_point = design_params.StartPoint
+                start_pos = SimpleVector(start_point.Coordinates[0], start_point.Coordinates[1])
                 length = design_params.SegmentLength
 
+                # Calculate tangent end point
                 end_x = start_pos.x + length * math.cos(direction)
                 end_y = start_pos.y + length * math.sin(direction)
                 end_pos = SimpleVector(end_x, end_y)
 
-                # Check if next segment is a curve
-                # If so, this end point is a PI with a curve
-                has_curve_at_end = False
+                # Add PI at start of first tangent
+                if len(self.pis) == 0:
+                    pi_data = {
+                        'id': 0,
+                        'position': start_pos,
+                        'ifc_point': self.ifc.create_entity("IfcCartesianPoint",
+                            Coordinates=[float(start_pos.x), float(start_pos.y)])
+                    }
+                    self.pis.append(pi_data)
+
+                # Check if there's a curve after this tangent
+                has_curve = False
                 if i + 1 < len(self.segments):
                     next_seg = self.segments[i + 1]
                     if next_seg.DesignParameters and next_seg.DesignParameters.PredefinedType == "CIRCULARARC":
-                        has_curve_at_end = True
+                        has_curve = True
+                        curve_seg = next_seg
+                        curve_params = curve_seg.DesignParameters
 
-                # Create PI at end of tangent
-                pi_data = {
-                    'id': pi_index,
-                    'position': end_pos,
-                    'ifc_point': self.ifc.create_entity("IfcCartesianPoint",
-                        Coordinates=[float(end_x), float(end_y)])
-                }
+                if has_curve and i + 2 < len(self.segments):
+                    # We have: tangent1 -> curve -> tangent2
+                    # Calculate PI as intersection of tangent1 and tangent2 directions
 
-                # If next segment is curve, attach curve data to this PI
-                if has_curve_at_end:
-                    next_seg = self.segments[i + 1]
-                    curve_params = next_seg.DesignParameters
+                    # Get tangent2 direction
+                    tangent2_seg = self.segments[i + 2]
+                    if tangent2_seg.DesignParameters and tangent2_seg.DesignParameters.PredefinedType == "LINE":
+                        t2_dir = tangent2_seg.DesignParameters.StartDirection
 
-                    # Extract curve geometry
-                    radius = abs(curve_params.StartRadiusOfCurvature)
-                    arc_length = curve_params.SegmentLength
-                    start_dir = curve_params.StartDirection
+                        # Calculate PI from curve geometry
+                        # BC = end of tangent1, EC = start of tangent2
+                        bc = end_pos  # End of current tangent
+                        ec_point = curve_params.StartPoint  # Start of curve
+                        # Actually, need to calculate EC from curve
+                        curve_length = curve_params.SegmentLength
+                        radius = abs(curve_params.StartRadiusOfCurvature)
+                        deflection = curve_length / radius
 
-                    # Calculate BC, EC, and other curve properties
-                    # BC is the start of the curve (end of current tangent)
-                    bc = start_pos + SimpleVector(length * math.cos(direction), length * math.sin(direction))
+                        # Calculate tangent length: T = R * tan(Δ/2)
+                        tangent_length = radius * math.tan(deflection / 2)
 
-                    # EC is start of curve + arc direction
-                    # For now, store basic curve info
-                    pi_data['curve'] = {
-                        'bc': bc,
-                        'ec': end_pos,  # Will be recalculated when regenerating
-                        'radius': radius,
-                        'arc_length': arc_length,
-                        'start_direction': start_dir,
-                        'deflection': arc_length / radius  # Approximate
+                        # PI = BC + T * tangent1_direction
+                        t1_unit = SimpleVector(math.cos(direction), math.sin(direction))
+                        pi_pos = bc + t1_unit * tangent_length
+
+                        # Add PI with curve data
+                        pi_data = {
+                            'id': len(self.pis),
+                            'position': pi_pos,
+                            'ifc_point': self.ifc.create_entity("IfcCartesianPoint",
+                                Coordinates=[float(pi_pos.x), float(pi_pos.y)]),
+                            'curve': {
+                                'radius': radius,
+                                'arc_length': curve_length,
+                                'deflection': deflection,
+                                'bc': bc,
+                                'ec': None,  # Calculate later
+                                'start_direction': direction,
+                                'turn_direction': 'LEFT' if curve_params.StartRadiusOfCurvature > 0 else 'RIGHT'
+                            }
+                        }
+                        self.pis.append(pi_data)
+
+                        # Skip the curve and move to tangent2
+                        i += 2
+                    else:
+                        # No tangent2, just add end of tangent1 as PI
+                        pi_data = {
+                            'id': len(self.pis),
+                            'position': end_pos,
+                            'ifc_point': self.ifc.create_entity("IfcCartesianPoint",
+                                Coordinates=[float(end_x), float(end_y)])
+                        }
+                        self.pis.append(pi_data)
+                        i += 1
+                else:
+                    # No curve, just add end of tangent as PI
+                    pi_data = {
+                        'id': len(self.pis),
+                        'position': end_pos,
+                        'ifc_point': self.ifc.create_entity("IfcCartesianPoint",
+                            Coordinates=[float(end_x), float(end_y)])
                     }
+                    self.pis.append(pi_data)
+                    i += 1
 
-                self.pis.append(pi_data)
-                pi_index += 1
-
-            elif seg_type == "CIRCULARARC":
-                # Curve segment - already handled by previous LINE segment
-                # The curve data is attached to the PI before the curve
-                pass
+            elif design_params.PredefinedType == "CIRCULARARC":
+                # Standalone curve without being detected by tangent logic
+                # This shouldn't happen in our workflow
+                print(f"[Alignment] Warning: Standalone curve segment found at index {i}")
+                i += 1
+            else:
+                i += 1
 
         print(f"[Alignment] Reconstructed {len(self.pis)} PIs from {len(self.segments)} segments")
 
