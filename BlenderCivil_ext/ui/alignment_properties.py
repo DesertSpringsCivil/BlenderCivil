@@ -226,6 +226,45 @@ class AlignmentProperties(PropertyGroup):
         default=True
     )
 
+    # ===== Station Marker Settings =====
+    show_station_markers: BoolProperty(
+        name="Show Station Markers",
+        description="Display station tick marks and labels along alignment",
+        default=False
+    )
+
+    station_major_interval: FloatProperty(
+        name="Major Station Interval",
+        description="Distance between major station markers (full stations)",
+        default=1000.0,
+        min=1.0,
+        unit='LENGTH'
+    )
+
+    station_minor_interval: FloatProperty(
+        name="Minor Station Interval",
+        description="Distance between minor station markers (intermediate stations)",
+        default=100.0,
+        min=1.0,
+        unit='LENGTH'
+    )
+
+    station_tick_size: FloatProperty(
+        name="Station Tick Size",
+        description="Size of station tick marks",
+        default=5.0,
+        min=0.1,
+        max=50.0
+    )
+
+    station_label_size: FloatProperty(
+        name="Station Label Size",
+        description="Size of station text labels",
+        default=2.0,
+        min=0.1,
+        max=20.0
+    )
+
 
 # Helper functions for working with active alignment
 def get_active_alignment_item(context):

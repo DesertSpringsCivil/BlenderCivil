@@ -1,0 +1,381 @@
+# ==============================================================================
+# BlenderCivil - Civil Engineering Tools for Blender
+# Copyright (c) 2024-2025 Michael Yoder / Desert Springs Civil Engineering PLLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Primary Author: Michael Yoder
+# Company: Desert Springs Civil Engineering PLLC
+# ==============================================================================
+
+"""
+Stationing Operators
+Operators for managing IFC stationing referents (IfcReferent with Pset_Stationing)
+"""
+
+import bpy
+from bpy.props import FloatProperty, StringProperty
+from ..core import alignment_registry
+from ..core.station_formatting import parse_station, format_station, format_station_short
+from ..ui.alignment_properties import get_active_alignment_ifc
+
+
+class BC_OT_set_starting_station(bpy.types.Operator):
+    """Set the starting station of the active alignment"""
+    bl_idname = "bc.set_starting_station"
+    bl_label = "Set Starting Station"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    station_input: StringProperty(
+        name="Starting Station",
+        description="Station value at start (e.g., '10+000', '0+000', or '10000')",
+        default="10+000"
+    )
+
+    _parsed_value: FloatProperty(default=10000.0)
+
+    def execute(self, context):
+        # Parse station input
+        try:
+            station_value = parse_station(self.station_input)
+            self._parsed_value = station_value
+        except ValueError as e:
+            self.report({'ERROR'}, f"Invalid station format: {e}")
+            return {'CANCELLED'}
+
+        # Get active alignment
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if not active_alignment_ifc:
+            self.report({'ERROR'}, "No active alignment")
+            return {'CANCELLED'}
+
+        # Get alignment object from registry
+        alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+        if not alignment_obj:
+            self.report({'ERROR'}, "Alignment not found in registry")
+            return {'CANCELLED'}
+
+        # Set starting station
+        alignment_obj.set_starting_station(station_value)
+
+        # Format output message
+        formatted_station = format_station_short(station_value)
+        self.report({'INFO'}, f"Set starting station to {formatted_station}")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        # Get current starting station if it exists
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if active_alignment_ifc:
+            alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+            if alignment_obj and alignment_obj.referents:
+                # Find starting station (distance_along = 0)
+                for ref in alignment_obj.referents:
+                    if ref['distance_along'] == 0.0:
+                        # Display in formatted notation
+                        self.station_input = format_station_short(ref['station'])
+                        self._parsed_value = ref['station']
+                        break
+
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "station_input")
+
+        # Show parsed value if valid
+        try:
+            parsed = parse_station(self.station_input)
+            layout.separator()
+            layout.label(text=f"= {parsed:.2f} meters", icon='INFO')
+        except ValueError:
+            pass  # Invalid input, don't show parsed value
+
+
+class BC_OT_add_station_equation(bpy.types.Operator):
+    """Add a station equation (chainage break) to the alignment"""
+    bl_idname = "bc.add_station_equation"
+    bl_label = "Add Station Equation"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    distance_along: FloatProperty(
+        name="Distance Along",
+        description="Distance along alignment where equation occurs (meters)",
+        default=500.0,
+        min=0.0,
+        unit='LENGTH'
+    )
+
+    incoming_station_input: StringProperty(
+        name="Incoming Station",
+        description="Station value approaching (e.g., '10+500', '5+00')",
+        default="10+500"
+    )
+
+    outgoing_station_input: StringProperty(
+        name="Outgoing Station",
+        description="Station value leaving (e.g., '15+000', '10+00')",
+        default="15+000"
+    )
+
+    description: StringProperty(
+        name="Description",
+        description="Optional description of the station equation",
+        default="Station Equation"
+    )
+
+    def execute(self, context):
+        # Parse station inputs
+        try:
+            incoming_value = parse_station(self.incoming_station_input)
+            outgoing_value = parse_station(self.outgoing_station_input)
+        except ValueError as e:
+            self.report({'ERROR'}, f"Invalid station format: {e}")
+            return {'CANCELLED'}
+
+        # Get active alignment
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if not active_alignment_ifc:
+            self.report({'ERROR'}, "No active alignment")
+            return {'CANCELLED'}
+
+        # Get alignment object from registry
+        alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+        if not alignment_obj:
+            self.report({'ERROR'}, "Alignment not found in registry")
+            return {'CANCELLED'}
+
+        # Add station equation
+        alignment_obj.add_station_equation(
+            self.distance_along,
+            incoming_value,
+            outgoing_value,
+            self.description
+        )
+
+        # Format output message
+        incoming_fmt = format_station_short(incoming_value)
+        outgoing_fmt = format_station_short(outgoing_value)
+        self.report({'INFO'},
+                   f"Added equation at {self.distance_along:.2f}m: {incoming_fmt} → {outgoing_fmt}")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        # Auto-calculate incoming station based on current stationing
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if active_alignment_ifc:
+            alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+            if alignment_obj:
+                # Calculate what the incoming station would be at this distance
+                incoming_calc = alignment_obj.get_station_at_distance(self.distance_along)
+                self.incoming_station_input = format_station_short(incoming_calc)
+
+                # Set outgoing to a reasonable default (e.g., +5000m ahead)
+                self.outgoing_station_input = format_station_short(incoming_calc + 5000.0)
+
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "distance_along")
+        layout.separator()
+        layout.label(text="Station Equation:")
+
+        # Incoming station
+        row = layout.row()
+        row.prop(self, "incoming_station_input", text="Back")
+        try:
+            parsed = parse_station(self.incoming_station_input)
+            row.label(text=f"({parsed:.2f}m)")
+        except:
+            pass
+
+        layout.label(text="→", icon='FORWARD')
+
+        # Outgoing station
+        row = layout.row()
+        row.prop(self, "outgoing_station_input", text="Ahead")
+        try:
+            parsed = parse_station(self.outgoing_station_input)
+            row.label(text=f"({parsed:.2f}m)")
+        except:
+            pass
+
+        layout.separator()
+        layout.prop(self, "description")
+
+
+class BC_OT_remove_station_equation(bpy.types.Operator):
+    """Remove a station equation from the alignment"""
+    bl_idname = "bc.remove_station_equation"
+    bl_label = "Remove Station Equation"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    distance_along: FloatProperty(
+        name="Distance Along",
+        description="Distance where the equation exists",
+        default=0.0,
+        unit='LENGTH'
+    )
+
+    def execute(self, context):
+        # Get active alignment
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if not active_alignment_ifc:
+            self.report({'ERROR'}, "No active alignment")
+            return {'CANCELLED'}
+
+        # Get alignment object from registry
+        alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+        if not alignment_obj:
+            self.report({'ERROR'}, "Alignment not found in registry")
+            return {'CANCELLED'}
+
+        # Remove station equation
+        if alignment_obj.remove_station_equation(self.distance_along):
+            self.report({'INFO'}, f"Removed station equation at {self.distance_along:.2f}m")
+            return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, f"No station equation found at {self.distance_along:.2f}m")
+            return {'CANCELLED'}
+
+
+class BC_OT_calculate_station(bpy.types.Operator):
+    """Calculate station value at a given distance along the alignment"""
+    bl_idname = "bc.calculate_station"
+    bl_label = "Calculate Station"
+    bl_options = {'REGISTER'}
+
+    distance_along: FloatProperty(
+        name="Distance Along",
+        description="Distance along alignment (meters)",
+        default=0.0,
+        unit='LENGTH'
+    )
+
+    _calculated_station: FloatProperty(default=0.0)
+    _calculated_station_formatted: StringProperty(default="")
+
+    def execute(self, context):
+        # Get active alignment
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if not active_alignment_ifc:
+            self.report({'ERROR'}, "No active alignment")
+            return {'CANCELLED'}
+
+        # Get alignment object from registry
+        alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+        if not alignment_obj:
+            self.report({'ERROR'}, "Alignment not found in registry")
+            return {'CANCELLED'}
+
+        # Calculate station
+        self._calculated_station = alignment_obj.get_station_at_distance(self.distance_along)
+        self._calculated_station_formatted = format_station_short(self._calculated_station)
+
+        self.report({'INFO'},
+                   f"At {self.distance_along:.2f}m → Station {self._calculated_station_formatted}")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        # Pre-calculate if alignment is available
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if active_alignment_ifc:
+            alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+            if alignment_obj:
+                self._calculated_station = alignment_obj.get_station_at_distance(self.distance_along)
+                self._calculated_station_formatted = format_station_short(self._calculated_station)
+
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "distance_along")
+
+        # Show calculated result
+        if self._calculated_station_formatted:
+            layout.separator()
+            box = layout.box()
+            col = box.column(align=True)
+            col.label(text=f"Station: {self._calculated_station_formatted}", icon='TRACKING')
+            col.label(text=f"= {self._calculated_station:.2f} meters")
+
+
+class BC_OT_update_station_markers(bpy.types.Operator):
+    """Update station markers along the alignment"""
+    bl_idname = "bc.update_station_markers"
+    bl_label = "Update Station Markers"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # Get active alignment
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if not active_alignment_ifc:
+            self.report({'ERROR'}, "No active alignment")
+            return {'CANCELLED'}
+
+        # Get alignment object from registry
+        alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+        if not alignment_obj:
+            self.report({'ERROR'}, "Alignment not found in registry")
+            return {'CANCELLED'}
+
+        # Get settings from scene properties
+        props = context.scene.bc_alignment
+
+        # Check if markers should be shown
+        if not props.show_station_markers:
+            # Remove existing markers
+            if hasattr(alignment_obj, 'visualizer') and alignment_obj.visualizer:
+                alignment_obj.visualizer.clear_station_markers()
+            self.report({'INFO'}, "Station markers hidden")
+            return {'FINISHED'}
+
+        # Update markers
+        if hasattr(alignment_obj, 'visualizer') and alignment_obj.visualizer:
+            alignment_obj.visualizer.update_station_markers(
+                major_interval=props.station_major_interval,
+                minor_interval=props.station_minor_interval,
+                tick_size=props.station_tick_size,
+                label_size=props.station_label_size
+            )
+            self.report({'INFO'}, "Updated station markers")
+        else:
+            self.report({'WARNING'}, "No visualizer found for alignment")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
+# Registration
+classes = (
+    BC_OT_set_starting_station,
+    BC_OT_add_station_equation,
+    BC_OT_remove_station_equation,
+    BC_OT_calculate_station,
+    BC_OT_update_station_markers,
+)
+
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+
+if __name__ == "__main__":
+    register()

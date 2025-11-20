@@ -166,10 +166,10 @@ class VIEW3D_PT_native_ifc_alignment(bpy.types.Panel):
             if "Curve" in context.active_object.name:
                 curve_box = box.box()
                 obj = context.active_object
-                
+
                 col = curve_box.column(align=True)
                 col.label(text=f"Selected: {obj.name}", icon='CURVE_DATA')
-                
+
                 # Show curve parameters if available from IFC
                 if "ifc_definition_id" in obj:
                     ifc = NativeIfcManager.get_file()
@@ -180,12 +180,82 @@ class VIEW3D_PT_native_ifc_alignment(bpy.types.Panel):
                             if params:
                                 col.label(text=f"Radius: {abs(params.StartRadiusOfCurvature):.2f}m")
                                 col.label(text=f"Length: {params.SegmentLength:.2f}m")
-                                
+
                                 # Determine turn direction
                                 if params.StartRadiusOfCurvature > 0:
                                     col.label(text="Turn: LEFT (CCW)", icon='LOOP_BACK')
                                 else:
                                     col.label(text="Turn: RIGHT (CW)", icon='LOOP_FORWARDS')
+
+        # ==================== STATIONING TOOLS ====================
+        box = layout.box()
+        box.label(text="Stationing", icon='DRIVER_DISTANCE')
+
+        col = box.column(align=True)
+
+        # Show current starting station if available
+        if props.active_alignment_id:
+            # Try to get alignment object from registry to show stationing
+            from ..core import alignment_registry
+            from ..core.station_formatting import format_station_short
+            from .alignment_properties import get_active_alignment_ifc
+
+            active_alignment_ifc = get_active_alignment_ifc(context)
+            if active_alignment_ifc:
+                alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+
+                if alignment_obj and alignment_obj.referents:
+                    # Find starting station
+                    for ref in alignment_obj.referents:
+                        if ref['distance_along'] == 0.0:
+                            info_box = col.box()
+                            # Format station properly
+                            formatted_station = format_station_short(ref['station'])
+                            info_box.label(text=f"Start: {formatted_station}", icon='TRACKING')
+                            break
+
+                    # Show station equations if any
+                    equations = [r for r in alignment_obj.referents if r['incoming_station'] is not None]
+                    if equations:
+                        info_box.label(text=f"Equations: {len(equations)}", icon='PREFERENCES')
+
+        col.separator()
+
+        # Stationing tools
+        col.label(text="Setup:", icon='PREFERENCES')
+        col.operator("bc.set_starting_station", text="Set Starting Station", icon='TRACKING')
+
+        col.separator()
+        col.label(text="Station Equations:", icon='PREFERENCES')
+        row = col.row(align=True)
+        row.operator("bc.add_station_equation", text="Add Equation", icon='ADD')
+        row.operator("bc.remove_station_equation", text="Remove", icon='X')
+
+        col.separator()
+        col.label(text="Utilities:", icon='PROPERTIES')
+        col.operator("bc.calculate_station", text="Calculate Station", icon='PIVOT_CURSOR')
+
+        # ==================== STATION MARKERS (Visual) ====================
+        col.separator()
+        col.label(text="Display:", icon='HIDE_OFF')
+
+        # Show/hide toggle
+        col.prop(props, "show_station_markers", text="Show Station Markers")
+
+        # Settings (only show when markers are enabled)
+        if props.show_station_markers:
+            sub = col.column(align=True)
+            sub.scale_y = 0.9
+            sub.prop(props, "station_major_interval", text="Major Interval")
+            sub.prop(props, "station_minor_interval", text="Minor Interval")
+
+            sub.separator()
+            sub.prop(props, "station_tick_size", text="Tick Size")
+            sub.prop(props, "station_label_size", text="Label Size")
+
+            sub.separator()
+            # Button to refresh markers
+            sub.operator("bc.update_station_markers", text="Update Markers", icon='FILE_REFRESH')
 
 
 # Registration

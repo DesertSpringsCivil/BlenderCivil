@@ -40,6 +40,7 @@ class AlignmentVisualizer:
         self.alignment_empty = None  # Main alignment empty
         self.pi_objects = []
         self.segment_objects = []
+        self.station_markers = []  # Station tick marks and labels (Blender-only visuals)
 
         self.setup_hierarchy()
 
@@ -527,3 +528,356 @@ class AlignmentVisualizer:
         print(f"   Collection: {self.collection.name}")
         print(f"   PIs: {len(self.pi_objects)} objects")
         print(f"   Segments: {len(self.segment_objects)} curves")
+
+    # ============================================================================
+    # STATION MARKER VISUALIZATION (Blender-only, not saved to IFC)
+    # ============================================================================
+
+    def _get_station_markers_collection(self):
+        """Get or create a separate collection for station markers.
+
+        This keeps station markers (Blender-only visualization) separate from
+        the IFC hierarchy to avoid confusion.
+
+        Returns:
+            Blender collection for station markers
+        """
+        collection_name = "Station Markers"
+
+        # Check if collection already exists
+        if collection_name in bpy.data.collections:
+            return bpy.data.collections[collection_name]
+
+        # Create new collection
+        markers_collection = bpy.data.collections.new(collection_name)
+
+        # Link to scene
+        bpy.context.scene.collection.children.link(markers_collection)
+
+        print(f"[Visualizer] Created '{collection_name}' collection for Blender-only visuals")
+        return markers_collection
+
+    def clear_station_markers(self):
+        """Remove all station marker objects from Blender."""
+        markers_collection = self._get_station_markers_collection()
+
+        for marker in self.station_markers:
+            try:
+                # Unlink from collection
+                if markers_collection and marker.name in markers_collection.objects:
+                    markers_collection.objects.unlink(marker)
+                # Remove from Blender data
+                bpy.data.objects.remove(marker, do_unlink=True)
+            except (ReferenceError, AttributeError):
+                # Object was already deleted
+                pass
+
+        self.station_markers = []
+        print("[Visualizer] Cleared station markers")
+
+    def update_station_markers(self, major_interval=1000.0, minor_interval=100.0,
+                               tick_size=5.0, label_size=2.0):
+        """Create or update station markers along the alignment.
+
+        Markers are placed at round station values (e.g., 10+500, 10+600, 11+000)
+        rather than at fixed intervals from the start of the alignment.
+
+        Args:
+            major_interval: Interval for major stations (e.g., 1000m for full stations)
+            minor_interval: Interval for minor stations (e.g., 100m for intermediate)
+            tick_size: Size of tick marks perpendicular to alignment
+            label_size: Size of text labels
+        """
+        from ..core.station_formatting import format_station_short
+        import math
+
+        # Clear existing markers
+        self.clear_station_markers()
+
+        # Need segments to visualize along
+        if not self.alignment.segments:
+            print("[Visualizer] No segments to place station markers on")
+            return
+
+        # Get total length of alignment
+        total_length = 0.0
+        for segment in self.alignment.segments:
+            if hasattr(segment.DesignParameters, 'SegmentLength'):
+                total_length += segment.DesignParameters.SegmentLength
+
+        if total_length <= 0:
+            print("[Visualizer] Alignment has zero length")
+            return
+
+        # Get station range
+        starting_station = self.alignment.get_station_at_distance(0.0)
+        ending_station = self.alignment.get_station_at_distance(total_length)
+
+        # Find first round minor station value (round up to next interval)
+        first_station = math.ceil(starting_station / minor_interval) * minor_interval
+
+        print(f"[Visualizer] Creating station markers from {format_station_short(first_station)} "
+              f"to {format_station_short(ending_station)} (interval: {minor_interval}m)")
+
+        # Iterate through round station values
+        current_station = first_station
+        while current_station <= ending_station:
+            # Determine if this is a major or minor station
+            is_major = abs(current_station % major_interval) < 0.01
+
+            # Convert station value to distance along alignment
+            distance = self._get_distance_at_station(current_station)
+
+            if distance is not None and 0 <= distance <= total_length:
+                # Get position and direction at this distance
+                pos_data = self._get_position_at_distance(distance)
+                if pos_data:
+                    position = pos_data['position']
+                    direction = pos_data['direction']
+
+                    # Create tick mark perpendicular to alignment
+                    tick_obj = self._create_tick_mark(position, direction, tick_size, is_major)
+                    if tick_obj:
+                        self.station_markers.append(tick_obj)
+
+                    # Create label for major stations
+                    if is_major:
+                        label_obj = self._create_station_label(
+                            position, direction, current_station, label_size
+                        )
+                        if label_obj:
+                            self.station_markers.append(label_obj)
+
+            current_station += minor_interval
+
+        print(f"[Visualizer] Created {len(self.station_markers)} station marker objects")
+
+    def _get_distance_at_station(self, station_value):
+        """Convert station value to distance along alignment.
+
+        This handles simple stationing. For alignments with station equations,
+        this provides basic support but may need enhancement for complex cases.
+
+        Args:
+            station_value: Station value in meters
+
+        Returns:
+            Distance along alignment in meters, or None if station is out of range
+        """
+        if not self.alignment.referents:
+            # No stationing defined, assume 1:1 relationship
+            return station_value
+
+        # Get starting station (at distance = 0)
+        starting_station = None
+        for ref in self.alignment.referents:
+            if ref['distance_along'] == 0.0:
+                starting_station = ref['station']
+                break
+
+        if starting_station is None:
+            return None
+
+        # Simple conversion: works correctly without station equations
+        # With station equations, this is an approximation
+        # TODO: Implement proper station equation handling
+        distance = station_value - starting_station
+
+        return distance if distance >= 0 else None
+
+    def _get_position_at_distance(self, distance_along):
+        """Get position and direction at a distance along the alignment.
+
+        Args:
+            distance_along: Distance in meters from start of alignment
+
+        Returns:
+            dict with 'position' (Vector) and 'direction' (Vector), or None if not found
+        """
+        # Walk through segments to find the position
+        cumulative_distance = 0.0
+
+        for segment in self.alignment.segments:
+            params = segment.DesignParameters
+            segment_length = params.SegmentLength
+
+            if cumulative_distance + segment_length >= distance_along:
+                # Position is in this segment
+                local_distance = distance_along - cumulative_distance
+
+                if params.PredefinedType == "LINE":
+                    # Linear interpolation along line
+                    start_point = params.StartPoint.Coordinates
+                    direction_angle = params.StartDirection
+
+                    position = Vector((
+                        start_point[0] + local_distance * math.cos(direction_angle),
+                        start_point[1] + local_distance * math.sin(direction_angle),
+                        0.0
+                    ))
+
+                    direction = Vector((
+                        math.cos(direction_angle),
+                        math.sin(direction_angle),
+                        0.0
+                    ))
+
+                    return {'position': position, 'direction': direction}
+
+                elif params.PredefinedType == "CIRCULARARC":
+                    # Calculate position on circular arc
+                    start_point = params.StartPoint.Coordinates
+                    radius = abs(params.StartRadiusOfCurvature)
+                    start_direction = params.StartDirection
+                    signed_radius = params.StartRadiusOfCurvature
+
+                    # Calculate center of circle
+                    if signed_radius > 0:  # LEFT turn (CCW)
+                        center_angle = start_direction + math.pi / 2
+                    else:  # RIGHT turn (CW)
+                        center_angle = start_direction - math.pi / 2
+
+                    center_x = start_point[0] + radius * math.cos(center_angle)
+                    center_y = start_point[1] + radius * math.sin(center_angle)
+
+                    # Calculate angle traveled along arc
+                    arc_angle = local_distance / radius
+                    if signed_radius < 0:  # CW turn
+                        arc_angle = -arc_angle
+
+                    # Current angle on circle
+                    current_angle = start_direction + arc_angle
+                    if signed_radius > 0:  # LEFT
+                        current_angle -= math.pi / 2
+                    else:  # RIGHT
+                        current_angle += math.pi / 2
+
+                    # Position on circle
+                    position = Vector((
+                        center_x + radius * math.cos(current_angle),
+                        center_y + radius * math.sin(current_angle),
+                        0.0
+                    ))
+
+                    # Tangent direction at this point
+                    if signed_radius > 0:  # LEFT
+                        tangent_angle = current_angle + math.pi / 2
+                    else:  # RIGHT
+                        tangent_angle = current_angle - math.pi / 2
+
+                    direction = Vector((
+                        math.cos(tangent_angle),
+                        math.sin(tangent_angle),
+                        0.0
+                    ))
+
+                    return {'position': position, 'direction': direction}
+
+            cumulative_distance += segment_length
+
+        return None
+
+    def _create_tick_mark(self, position, direction, tick_size, is_major):
+        """Create a tick mark perpendicular to the alignment.
+
+        Args:
+            position: Vector position along alignment
+            direction: Vector direction of alignment at this point
+            tick_size: Length of tick mark
+            is_major: True for major stations, False for minor
+
+        Returns:
+            Blender curve object for the tick mark
+        """
+        # Perpendicular direction (90° CCW from alignment direction)
+        perp_direction = Vector((-direction.y, direction.x, 0.0))
+        perp_direction.normalize()
+
+        # Tick mark extends on both sides of alignment
+        if is_major:
+            # Major tick: extends more
+            start = position - perp_direction * tick_size * 0.75
+            end = position + perp_direction * tick_size * 0.75
+            line_width = 0.15
+        else:
+            # Minor tick: shorter
+            start = position - perp_direction * tick_size * 0.4
+            end = position + perp_direction * tick_size * 0.4
+            line_width = 0.08
+
+        # Create curve data
+        curve_data = bpy.data.curves.new(name="Station_Tick", type='CURVE')
+        curve_data.dimensions = '3D'
+        curve_data.bevel_depth = line_width
+        curve_data.bevel_resolution = 2
+
+        # Create spline
+        spline = curve_data.splines.new('POLY')
+        spline.points.add(1)  # Add one more point (starts with 1)
+        spline.points[0].co = (start.x, start.y, start.z, 1.0)
+        spline.points[1].co = (end.x, end.y, end.z, 1.0)
+
+        # Create object
+        tick_obj = bpy.data.objects.new("Station_Tick", curve_data)
+        # Note: NOT parented to alignment - kept separate in Station Markers collection
+
+        # Set color (cyan for visibility against aerial imagery)
+        mat = bpy.data.materials.new(name="Station_Tick_Mat")
+        mat.diffuse_color = (0.0, 0.9, 1.0, 1.0) if not is_major else (0.0, 1.0, 1.0, 1.0)
+        curve_data.materials.append(mat)
+
+        # Link to station markers collection (separate from IFC hierarchy)
+        markers_collection = self._get_station_markers_collection()
+        if markers_collection:
+            markers_collection.objects.link(tick_obj)
+
+        return tick_obj
+
+    def _create_station_label(self, position, direction, station_value, label_size):
+        """Create text label showing the station value.
+
+        Args:
+            position: Vector position along alignment
+            direction: Vector direction of alignment
+            station_value: Numeric station value in meters
+            label_size: Size of text
+
+        Returns:
+            Blender text object
+        """
+        from ..core.station_formatting import format_station_short
+
+        # Format station as text
+        station_text = format_station_short(station_value)
+
+        # Perpendicular direction for offset
+        perp_direction = Vector((-direction.y, direction.x, 0.0))
+        perp_direction.normalize()
+
+        # Offset label to the side and lift above ground/imagery
+        label_position = position + perp_direction * label_size * 3
+        label_position.z = label_size * 2  # Lift above ground/background imagery
+
+        # Create text data
+        text_data = bpy.data.curves.new(name=f"Station_{station_text}", type='FONT')
+        text_data.body = station_text
+        text_data.size = label_size
+        text_data.align_x = 'CENTER'
+        text_data.align_y = 'CENTER'
+
+        # Create object
+        text_obj = bpy.data.objects.new(f"Station_{station_text}", text_data)
+        text_obj.location = label_position
+        # Note: NOT parented to alignment - kept separate in Station Markers collection
+
+        # Set color (cyan for visibility against aerial imagery)
+        mat = bpy.data.materials.new(name="Station_Label_Mat")
+        mat.diffuse_color = (0.0, 1.0, 1.0, 1.0)  # Bright cyan
+        text_data.materials.append(mat)
+
+        # Link to station markers collection (separate from IFC hierarchy)
+        markers_collection = self._get_station_markers_collection()
+        if markers_collection:
+            markers_collection.objects.link(text_obj)
+
+        return text_obj
