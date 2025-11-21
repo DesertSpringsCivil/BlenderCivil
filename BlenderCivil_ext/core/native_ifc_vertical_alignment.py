@@ -502,13 +502,13 @@ class TangentSegment(VerticalSegment):
         return self.grade
     
     def to_ifc_segment(self, ifc_file: ifcopenshell.file) -> ifcopenshell.entity_instance:
-        """Export to IFC IfcAlignmentVerticalSegment
-        
+        """Export to IFC IfcAlignmentVerticalSegment (SEMANTIC layer only)
+
         Creates IFC entity with CONSTANTGRADIENT type.
-        
+
         Args:
             ifc_file: IFC file instance
-        
+
         Returns:
             IfcAlignmentVerticalSegment entity
         """
@@ -520,8 +520,66 @@ class TangentSegment(VerticalSegment):
             StartGradient=self.grade,
             PredefinedType="CONSTANTGRADIENT"
         )
-        
+
         return segment
+
+    def to_ifc_curve_segment(self, ifc_file: ifcopenshell.file) -> ifcopenshell.entity_instance:
+        """Export to IFC IfcCurveSegment (GEOMETRIC layer)
+
+        Creates geometric representation using IfcLine as ParentCurve.
+
+        Args:
+            ifc_file: IFC file instance
+
+        Returns:
+            IfcCurveSegment entity
+        """
+        import math
+
+        # Calculate direction vector based on grade
+        # In 2D "distance-elevation" plane
+        theta = math.atan(self.grade)
+        dx = math.cos(theta)
+        dy = math.sin(theta)
+
+        # Create IfcLine through origin with direction based on grade
+        direction = ifc_file.create_entity("IfcDirection", DirectionRatios=(dx, dy))
+        line = ifc_file.create_entity(
+            "IfcLine",
+            Pnt=ifc_file.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0)),
+            Dir=ifc_file.create_entity("IfcVector", Orientation=direction, Magnitude=1.0)
+        )
+
+        # Create placement at segment start
+        placement_location = ifc_file.create_entity(
+            "IfcCartesianPoint",
+            Coordinates=(self.start_station, self.start_elevation)
+        )
+        placement_direction = ifc_file.create_entity(
+            "IfcDirection",
+            DirectionRatios=(dx, dy)
+        )
+        placement = ifc_file.create_entity(
+            "IfcAxis2Placement2D",
+            Location=placement_location,
+            RefDirection=placement_direction
+        )
+
+        # Calculate segment length along the line (not just horizontal)
+        # For a line: length = horizontal_length / cos(theta)
+        segment_length = self.length / dx if abs(dx) > 1e-10 else self.length
+
+        # Create IfcCurveSegment
+        curve_segment = ifc_file.create_entity(
+            "IfcCurveSegment",
+            Transition="CONTINUOUS",
+            Placement=placement,
+            SegmentStart=ifc_file.create_entity("IfcLengthMeasure", 0.0),
+            SegmentLength=ifc_file.create_entity("IfcLengthMeasure", segment_length),
+            ParentCurve=line
+        )
+
+        return curve_segment
     
     def __repr__(self) -> str:
         """String representation for debugging"""
@@ -729,12 +787,12 @@ class ParabolicSegment(VerticalSegment):
     
     def to_ifc_segment(self, ifc_file: ifcopenshell.file) -> ifcopenshell.entity_instance:
         """Export to IFC IfcAlignmentVerticalSegment
-        
+
         Creates IFC entity with PARABOLICARC type.
-        
+
         Args:
             ifc_file: IFC file instance
-        
+
         Returns:
             IfcAlignmentVerticalSegment entity
         """
@@ -747,9 +805,102 @@ class ParabolicSegment(VerticalSegment):
             EndGradient=self.g2,
             PredefinedType="PARABOLICARC"
         )
-        
+
         return segment
-    
+
+    def to_ifc_curve_segment(self, ifc_file: ifcopenshell.file) -> ifcopenshell.entity_instance:
+        """Export to IFC IfcCurveSegment (GEOMETRIC layer)
+
+        Creates geometric representation using IfcPolynomialCurve as ParentCurve.
+        The parabola equation is y(x) = Ax² + Bx + C where:
+            A = (g₂ - g₁) / (2L)
+            B = g₁
+            C = E_BVC (start elevation)
+
+        Args:
+            ifc_file: IFC file instance
+
+        Returns:
+            IfcCurveSegment entity
+        """
+        import math
+
+        # Polynomial coefficients for parabola: y = Ax² + Bx + C
+        A = (self.g2 - self.g1) / (2.0 * self.length)
+        B = self.g1
+        C = self.start_elevation
+
+        # Create IfcPolynomialCurve with X and Y coefficients
+        # CoefficientsX = (0, 1) means x(t) = 0 + 1*t = t
+        # CoefficientsY = (C, B, A) means y(t) = C + B*t + A*t²
+        polynomial = ifc_file.create_entity(
+            "IfcPolynomialCurve",
+            Position=ifc_file.create_entity(
+                "IfcAxis2Placement2D",
+                Location=ifc_file.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0)),
+                RefDirection=ifc_file.create_entity("IfcDirection", DirectionRatios=(1.0, 0.0))
+            ),
+            CoefficientsX=[0.0, 1.0],
+            CoefficientsY=[C, B, A]
+        )
+
+        # Calculate segment length along the parabolic curve
+        # Using closed-form solution for arc length of parabola
+        # s(x) = ∫√(1 + (y')²) dx where y' = 2Ax + B
+        # Let a = 4A², b = 4AB, c = B² + 1
+        # Then s(x) = ∫√(ax² + bx + c) dx
+
+        def parabola_arc_length(x: float) -> float:
+            """Calculate arc length along parabola from 0 to x"""
+            if abs(A) < 1e-10:
+                # Nearly straight line, use simplified formula
+                return x * math.sqrt(1 + B**2)
+
+            a = 4 * A**2
+            b = 4 * A * B
+            c = B**2 + 1
+
+            # Closed form solution (Integral Table #37)
+            def integral(t: float) -> float:
+                sqrt_val = math.sqrt(a * t**2 + b * t + c)
+                term1 = (b + 2 * a * t) / (4 * a) * sqrt_val
+
+                inner = 2 * a * t + b + 2 * math.sqrt(a * (a * t**2 + b * t + c))
+                if inner <= 0:
+                    term2 = 0
+                else:
+                    term2 = (4 * a * c - b**2) / (8 * a**1.5) * math.log(abs(inner))
+
+                return term1 + term2
+
+            return integral(x) - integral(0.0)
+
+        curve_length = parabola_arc_length(self.length)
+
+        # Create placement at segment start
+        # Direction at start is based on start gradient
+        theta_start = math.atan(self.g1)
+        dx = math.cos(theta_start)
+        dy = math.sin(theta_start)
+
+        placement = ifc_file.create_entity(
+            "IfcAxis2Placement2D",
+            Location=ifc_file.create_entity("IfcCartesianPoint", Coordinates=(self.start_station, self.start_elevation)),
+            RefDirection=ifc_file.create_entity("IfcDirection", DirectionRatios=(1.0, 0.0))
+        )
+
+        # Create IfcCurveSegment
+        curve_segment = ifc_file.create_entity(
+            "IfcCurveSegment",
+            Transition="CONTINUOUS",
+            Placement=placement,
+            SegmentStart=ifc_file.create_entity("IfcLengthMeasure", 0.0),
+            SegmentLength=ifc_file.create_entity("IfcLengthMeasure", curve_length),
+            ParentCurve=polynomial
+        )
+
+        return curve_segment
+
     def __repr__(self) -> str:
         """String representation for debugging"""
         curve_type = "CREST" if self.is_crest else "SAG"
@@ -1085,22 +1236,17 @@ class VerticalAlignment:
                 current_elevation = curve.end_elevation
             
             else:
-                # No curve at PVI2, check if we're at last PVI
-                if i == len(self.pvis) - 2:
-                    # Last segment - tangent to final PVI
-                    tangent = TangentSegment(
-                        start_station=current_station,
-                        end_station=pvi2.station,
-                        start_elevation=current_elevation,
-                        grade=grade
-                    )
-                    self.segments.append(tangent)
-                    
-                    current_station = pvi2.station
-                    current_elevation = tangent.end_elevation
-                else:
-                    # Continue to next PVI (will handle in next iteration)
-                    pass
+                # No curve at PVI2 - create tangent segment to this PVI
+                tangent = TangentSegment(
+                    start_station=current_station,
+                    end_station=pvi2.station,
+                    start_elevation=current_elevation,
+                    grade=grade
+                )
+                self.segments.append(tangent)
+
+                current_station = pvi2.station
+                current_elevation = tangent.end_elevation
     
     # ========================================================================
     # ELEVATION & GRADE QUERIES
@@ -1332,21 +1478,29 @@ class VerticalAlignment:
         ifc_file: ifcopenshell.file,
         horizontal_alignment: Optional[ifcopenshell.entity_instance] = None
     ) -> ifcopenshell.entity_instance:
-        """Export to IFC 4.3 IfcAlignmentVertical
-        
+        """Export to IFC 4.3 IfcAlignmentVertical with both semantic and geometric layers
+
+        Creates:
+        - Semantic layer: IfcAlignmentVertical + IfcAlignmentSegment entities
+        - Geometric layer: IfcGradientCurve with IfcCurveSegment entities
+
         Args:
             ifc_file: IFC file instance
             horizontal_alignment: Optional parent horizontal alignment
-        
+
         Returns:
-            IfcAlignmentVertical entity with all segments
+            IfcAlignmentVertical entity with all segments and geometric representation
         """
+        # ====================================================================
+        # SEMANTIC LAYER
+        # ====================================================================
+
         # Create IfcAlignmentVertical
         vertical = ifc_file.create_entity(
             "IfcAlignmentVertical",
             Name=self.name
         )
-        
+
         # Link to horizontal if provided
         if horizontal_alignment:
             # Create nested relationship
@@ -1355,17 +1509,93 @@ class VerticalAlignment:
                 RelatingObject=horizontal_alignment,
                 RelatedObjects=[vertical]
             )
-        
-        # Export all segments
+
+        # Export all segments (semantic layer)
         ifc_segments = []
         for segment in self.segments:
             ifc_seg = segment.to_ifc_segment(ifc_file)
             ifc_segments.append(ifc_seg)
-        
-        # Assign segments to vertical alignment
+
+        # Nest segments under vertical alignment using IfcRelNests
         if ifc_segments:
-            vertical.Segments = ifc_segments
-        
+            ifc_file.create_entity(
+                "IfcRelNests",
+                RelatingObject=vertical,
+                RelatedObjects=ifc_segments
+            )
+
+        # ====================================================================
+        # GEOMETRIC LAYER
+        # ====================================================================
+
+        # Create IfcCurveSegment entities for each segment
+        ifc_curve_segments = []
+        for segment in self.segments:
+            curve_seg = segment.to_ifc_curve_segment(ifc_file)
+            ifc_curve_segments.append(curve_seg)
+
+        # Create IfcGradientCurve containing all curve segments
+        if ifc_curve_segments:
+            gradient_curve = ifc_file.create_entity(
+                "IfcGradientCurve",
+                Segments=ifc_curve_segments,
+                SelfIntersect=False
+            )
+
+            # Link BaseCurve if horizontal alignment provided
+            if horizontal_alignment:
+                # Find the IfcCompositeCurve that represents the horizontal alignment
+                # It should be linked via IfcRelNests or stored as Axis attribute
+                # For now, we'll look for IfcCompositeCurve in the horizontal's representations
+
+                # Try to find the base curve (IfcCompositeCurve) from horizontal alignment
+                # The horizontal alignment should have an Axis attribute pointing to IfcCompositeCurve
+                if hasattr(horizontal_alignment, 'Axis') and horizontal_alignment.Axis:
+                    base_curve = horizontal_alignment.Axis
+                    gradient_curve.BaseCurve = base_curve
+                    print(f"[VerticalAlignment] Linked IfcGradientCurve to horizontal base curve")
+
+            # Store gradient curve as representation of vertical alignment
+            # Get or create geometric representation context
+            context = None
+            for ctx in ifc_file.by_type("IfcGeometricRepresentationContext"):
+                if ctx.ContextType == "Model":
+                    context = ctx
+                    break
+
+            # If no context found, create a minimal one
+            if context is None:
+                context = ifc_file.create_entity(
+                    "IfcGeometricRepresentationContext",
+                    ContextType="Model",
+                    CoordinateSpaceDimension=3,
+                    Precision=1.0e-5,
+                    WorldCoordinateSystem=ifc_file.create_entity(
+                        "IfcAxis2Placement3D",
+                        Location=ifc_file.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0))
+                    )
+                )
+
+            # Create a shape representation
+            shape_rep = ifc_file.create_entity(
+                "IfcShapeRepresentation",
+                ContextOfItems=context,
+                RepresentationIdentifier="Axis",
+                RepresentationType="Curve3D",
+                Items=[gradient_curve]
+            )
+
+            # Create product definition shape
+            product_shape = ifc_file.create_entity(
+                "IfcProductDefinitionShape",
+                Representations=[shape_rep]
+            )
+
+            # Assign to vertical alignment
+            vertical.Representation = product_shape
+
+            print(f"[VerticalAlignment] Created IfcGradientCurve with {len(ifc_curve_segments)} curve segments")
+
         return vertical
     
     # ========================================================================

@@ -569,30 +569,180 @@ class BC_OT_QueryStation(Operator):
         return {'FINISHED'}
 
 
+class BC_OT_TraceTerrainAsVertical(Operator):
+    """Create vertical alignment by tracing terrain data"""
+    bl_idname = "bc.trace_terrain_as_vertical"
+    bl_label = "Trace Terrain as Alignment"
+    bl_description = "Create IFC vertical alignment by tracing sampled terrain data"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    pvi_interval: FloatProperty(
+        name="PVI Interval",
+        description="Distance between PVIs (meters)",
+        default=5.0,
+        min=1.0,
+        max=50.0,
+    )
+
+    alignment_name: StringProperty(
+        name="Alignment Name",
+        description="Name for the vertical alignment",
+        default="Terrain Trace",
+    )
+
+    @classmethod
+    def poll(cls, context):
+        # Check if terrain data exists
+        from ..core.profile_view_overlay import get_profile_overlay
+        overlay = get_profile_overlay()
+        return overlay and len(overlay.data.terrain_points) > 0
+
+    def execute(self, context):
+        from ..core.profile_view_overlay import get_profile_overlay
+        from ..core.native_ifc_vertical_alignment import VerticalAlignment
+        from ..core.native_ifc_manager import NativeIfcManager
+        from ..ui.alignment_properties import get_active_alignment_ifc
+        import numpy as np
+
+        # Get terrain data
+        overlay = get_profile_overlay()
+        if not overlay or len(overlay.data.terrain_points) == 0:
+            self.report({'ERROR'}, "No terrain data available")
+            return {'CANCELLED'}
+
+        terrain_points = overlay.data.terrain_points
+
+        # Sort terrain points by station
+        terrain_points.sort(key=lambda p: p.station)
+
+        # Get station range
+        min_station = terrain_points[0].station
+        max_station = terrain_points[-1].station
+
+        # Create stations at regular intervals
+        num_pvis = int((max_station - min_station) / self.pvi_interval) + 1
+        pvi_stations = np.linspace(min_station, max_station, num_pvis)
+
+        # Interpolate terrain elevations at PVI stations
+        terrain_stations = np.array([p.station for p in terrain_points])
+        terrain_elevations = np.array([p.elevation for p in terrain_points])
+
+        pvi_elevations = np.interp(pvi_stations, terrain_stations, terrain_elevations)
+
+        # Create VerticalAlignment object
+        valign = VerticalAlignment(
+            name=self.alignment_name,
+            description=f"Traced from terrain data at {self.pvi_interval}m intervals"
+        )
+
+        # Add PVIs (no curves - all tangents)
+        for station, elevation in zip(pvi_stations, pvi_elevations):
+            valign.add_pvi(
+                station=float(station),
+                elevation=float(elevation),
+                curve_length=0.0  # No curves - pure tangent alignment
+            )
+
+        # Get active horizontal alignment
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if not active_alignment_ifc:
+            self.report({'ERROR'}, "No active horizontal alignment")
+            return {'CANCELLED'}
+
+        # Get IFC file
+        ifc = NativeIfcManager.get_file()
+        if not ifc:
+            self.report({'ERROR'}, "No IFC file loaded")
+            return {'CANCELLED'}
+
+        # Export vertical alignment to IFC
+        try:
+            vertical_ifc = valign.to_ifc(ifc, horizontal_alignment=active_alignment_ifc)
+
+            # Save IFC file
+            NativeIfcManager.save_file()
+
+            self.report({'INFO'},
+                       f"Created vertical alignment '{self.alignment_name}' with {len(valign.pvis)} PVIs")
+
+            # Print summary to console
+            print("\n" + "="*60)
+            print(valign.summary())
+            print("="*60 + "\n")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to create vertical alignment: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        # Set default name based on active alignment
+        from ..ui.alignment_properties import get_active_alignment_ifc
+        active_alignment_ifc = get_active_alignment_ifc(context)
+        if active_alignment_ifc:
+            self.alignment_name = f"{active_alignment_ifc.Name} - Terrain Trace"
+
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+
+        # Get terrain info
+        from ..core.profile_view_overlay import get_profile_overlay
+        overlay = get_profile_overlay()
+
+        if overlay and len(overlay.data.terrain_points) > 0:
+            box = layout.box()
+            box.label(text=f"Terrain Data: {len(overlay.data.terrain_points)} points", icon='CHECKMARK')
+
+            terrain_points = overlay.data.terrain_points
+            min_station = min(p.station for p in terrain_points)
+            max_station = max(p.station for p in terrain_points)
+
+            box.label(text=f"Station Range: {min_station:.1f}m - {max_station:.1f}m")
+
+            # Calculate number of PVIs
+            num_pvis = int((max_station - min_station) / self.pvi_interval) + 1
+            box.label(text=f"Will create: {num_pvis} PVIs", icon='INFO')
+
+        layout.separator()
+
+        # Settings
+        layout.label(text="Alignment Settings:")
+        layout.prop(self, "alignment_name")
+        layout.prop(self, "pvi_interval")
+
+        layout.separator()
+        layout.label(text="Note: All segments will be tangents (no curves)", icon='INFO')
+
+
 class BC_OT_ClearVerticalAlignment(Operator):
     """Clear all PVIs and segments"""
     bl_idname = "bc.clear_vertical"
     bl_label = "Clear All"
     bl_description = "Clear all PVIs and segments (cannot be undone)"
     bl_options = {'REGISTER'}
-    
+
     @classmethod
     def poll(cls, context):
         vertical = context.scene.bc_vertical
         return len(vertical.pvis) > 0
-    
+
     def execute(self, context):
         vertical = context.scene.bc_vertical
-        
+
         num_pvis = len(vertical.pvis)
         vertical.pvis.clear()
         vertical.segments.clear()
         vertical.is_valid = False
         vertical.validation_message = "No PVIs defined"
-        
+
         self.report({'INFO'}, f"Cleared {num_pvis} PVIs")
         return {'FINISHED'}
-    
+
     def invoke(self, context, event):
         return context.window_manager.invoke_confirm(self, event)
 
@@ -607,6 +757,7 @@ classes = (
     BC_OT_GenerateSegments,
     BC_OT_ValidateVertical,
     BC_OT_QueryStation,
+    BC_OT_TraceTerrainAsVertical,
     BC_OT_ClearVerticalAlignment,
 )
 

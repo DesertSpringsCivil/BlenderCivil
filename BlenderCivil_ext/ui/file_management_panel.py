@@ -87,6 +87,7 @@ class VIEW3D_PT_file_management(Panel):
             col.separator()
             row = col.row(align=True)
             row.operator("bc.save_ifc", text="Save", icon='FILE_TICK')
+            row.operator("bc.reload_ifc", text="", icon='FILE_REFRESH')
             row.operator("bc.show_ifc_info", text="", icon='INFO')
 
             col.separator()

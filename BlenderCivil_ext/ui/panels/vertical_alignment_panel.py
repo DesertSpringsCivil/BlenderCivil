@@ -102,6 +102,61 @@ class VIEW3D_PT_bc_vertical_alignment(Panel):
             col.label(text=f"Min: {vertical.elevation_min:.2f}m | Max: {vertical.elevation_max:.2f}m")
 
 
+class VIEW3D_PT_bc_vertical_terrain(Panel):
+    """Terrain Data Sub-Panel"""
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'BlenderCivil'
+    bl_label = "Terrain Data"
+    bl_parent_id = "VIEW3D_PT_bc_vertical_alignment"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+
+        # Check if profile view overlay exists
+        from ...core.profile_view_overlay import get_profile_overlay
+        overlay = get_profile_overlay()
+
+        # Terrain sampling
+        box = layout.box()
+        box.label(text="Sample Terrain:", icon='IMPORT')
+
+        col = box.column(align=True)
+        col.operator("bc.sample_terrain_from_mesh", text="Sample from Mesh", icon='MESH_DATA')
+
+        # Show terrain data status
+        if overlay and len(overlay.data.terrain_points) > 0:
+            col.separator()
+            col.label(text=f"{len(overlay.data.terrain_points)} terrain points", icon='CHECKMARK')
+
+            # Trace terrain as alignment button
+            layout.separator()
+            box = layout.box()
+            box.label(text="Create Alignment from Terrain:", icon='EXPORT')
+            col = box.column(align=True)
+            col.operator("bc.trace_terrain_as_vertical", text="Trace as IFC Alignment", icon='CURVE_PATH')
+            col.scale_y = 0.8
+            col.label(text="Creates tangent-only vertical alignment", icon='INFO')
+            col.label(text="tracing the sampled terrain data.")
+
+            # Clear terrain button
+            layout.separator()
+            row = layout.row()
+            row.operator("bc.clear_terrain_data", text="Clear Terrain", icon='X')
+        else:
+            col.label(text="No terrain data loaded", icon='INFO')
+
+        # Info message
+        layout.separator()
+        box = layout.box()
+        col = box.column(align=True)
+        col.scale_y = 0.8
+        col.label(text="Sample elevation from terrain mesh", icon='INFO')
+        col.label(text="(OBJ/STL) along the active")
+        col.label(text="horizontal alignment.")
+
+
 class VIEW3D_PT_bc_vertical_pvi_list(Panel):
     """PVI List Sub-Panel"""
     bl_space_type = 'VIEW_3D'
@@ -473,6 +528,7 @@ class VIEW3D_PT_bc_vertical_segments(Panel):
 classes = (
     BC_UL_pvi_list,
     VIEW3D_PT_bc_vertical_alignment,
+    VIEW3D_PT_bc_vertical_terrain,
     VIEW3D_PT_bc_vertical_pvi_list,
     VIEW3D_PT_bc_vertical_grade_info,
     VIEW3D_PT_bc_vertical_curve_design,

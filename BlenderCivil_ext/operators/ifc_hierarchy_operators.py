@@ -213,6 +213,59 @@ class BC_OT_clear_ifc(Operator):
             return {'CANCELLED'}
 
 
+class BC_OT_reload_ifc(Operator):
+    """Reload IFC file from disk"""
+    bl_idname = "bc.reload_ifc"
+    bl_label = "Reload IFC"
+    bl_description = "Reload IFC file from disk to refresh alignment and geometry data"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Reload IFC file from disk"""
+
+        try:
+            # Check if file is loaded and has a filepath
+            if NativeIfcManager.file is None:
+                self.report({'ERROR'}, "No IFC file loaded")
+                return {'CANCELLED'}
+
+            if not NativeIfcManager.filepath:
+                self.report({'ERROR'}, "IFC file has not been saved yet - use 'Save' first")
+                return {'CANCELLED'}
+
+            # Store filepath
+            filepath = NativeIfcManager.filepath
+
+            # Reload the file
+            ifc_file = NativeIfcManager.open_file(filepath)
+
+            # Get info
+            info = NativeIfcManager.get_info()
+
+            # Report success
+            self.report({'INFO'},
+                f"Reloaded: {info['project']} ({info['entities']} entities)")
+
+            # Show info in console
+            print("\n" + "="*60)
+            print("🔄 IFC FILE RELOADED")
+            print("="*60)
+            print(f"File: {filepath}")
+            print(f"Entities: {info['entities']}")
+            print(f"Alignments: {info['alignments']}")
+            print(f"Geomodels: {info['geomodels']}")
+            print("="*60 + "\n")
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to reload IFC file: {str(e)}")
+            print(f"❌ Error reloading IFC: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+
 class BC_OT_show_ifc_info(Operator):
     """Show current IFC file information"""
     bl_idname = "bc.show_ifc_info"
@@ -260,6 +313,7 @@ classes = (
     BC_OT_new_ifc,
     BC_OT_open_ifc,
     BC_OT_save_ifc,
+    BC_OT_reload_ifc,
     BC_OT_clear_ifc,
     BC_OT_show_ifc_info,
 )
