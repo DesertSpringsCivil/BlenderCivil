@@ -40,9 +40,14 @@ import numpy as np
 from gpu_extras.batch import batch_for_shader
 from typing import Tuple, List
 import blf  # Blender Font library for text
+import bpy
 
 # Import our core data model
 from .profile_view_data import ProfileViewData, ProfilePoint
+
+# Import stationing utilities
+from .station_formatting import format_station_short
+from . import alignment_registry
 
 
 # ============================================================================
@@ -56,6 +61,8 @@ COLORS = {
     'terrain_fill': (0.6, 0.5, 0.4, 0.3),    # Brown, transparent
     'terrain_line': (0.4, 0.3, 0.2, 1.0),    # Dark brown
     'alignment': (1.0, 0.2, 0.2, 1.0),       # Red
+    'vertical_alignment': (0.2, 1.0, 0.4, 1.0),  # Bright green for vertical alignments
+    'vertical_pvi': (0.6, 1.0, 0.6, 1.0),    # Light green for vertical PVIs
     'pvi_normal': (0.2, 0.8, 1.0, 1.0),      # Light blue
     'pvi_selected': (1.0, 1.0, 0.0, 1.0),    # Yellow
     'pvi_hover': (0.4, 1.0, 1.0, 1.0),       # Cyan
@@ -181,7 +188,31 @@ class ProfileViewRenderer:
         draw_x, draw_y, draw_w, draw_h = self.get_drawable_region()
         return (draw_x <= screen_x <= draw_x + draw_w and
                 draw_y <= screen_y <= draw_y + draw_h)
-    
+
+    def _get_active_alignment(self):
+        """
+        Get the active horizontal alignment from the scene.
+
+        Returns:
+            Active alignment object with stationing, or None if no active alignment
+        """
+        try:
+            # Import here to avoid circular dependency
+            from ..ui.alignment_properties import get_active_alignment_ifc
+
+            # Get active alignment IFC entity
+            active_alignment_ifc = get_active_alignment_ifc(bpy.context)
+            if not active_alignment_ifc:
+                return None
+
+            # Get alignment object from registry
+            alignment_obj = alignment_registry.get_alignment(active_alignment_ifc.GlobalId)
+            return alignment_obj
+
+        except Exception as e:
+            # Silently fail if alignment not available
+            return None
+
     def draw_background(self):
         """Draw semi-transparent background for profile view area"""
         x, y, w, h = self.view_region
@@ -236,44 +267,57 @@ class ProfileViewRenderer:
     
     def draw_terrain_profile(self, data: ProfileViewData):
         """
-        Draw terrain profile as filled polygon.
-        
+        Draw terrain profile with fill using proper triangulation.
+
+        Uses vertical strips to create triangles that work correctly
+        for any terrain shape (convex or non-convex).
+
         Args:
             data: ProfileViewData with terrain points
         """
         if not data.show_terrain or not data.terrain_points:
             return
-        
+
         # Sort terrain points by station
         terrain_sorted = sorted(data.terrain_points, key=lambda p: p.station)
-        
-        vertices = []
+
+        if len(terrain_sorted) < 2:
+            return
+
+        # Convert terrain points to screen coordinates
+        terrain_screen = []
         for pt in terrain_sorted:
             x, y = self.world_to_screen(pt.station, pt.elevation, data)
-            vertices.append((x, y))
-        
-        if not vertices:
-            return
-        
-        # Close polygon at bottom of view
-        x_last, _ = vertices[-1]
-        x_first, _ = vertices[0]
+            terrain_screen.append((x, y))
+
+        # Get bottom of view for fill
         _, y_bottom = self.world_to_screen(0, data.elevation_min, data)
-        
-        fill_vertices = vertices + [(x_last, y_bottom), (x_first, y_bottom)]
-        
-        # Draw filled polygon
-        if len(fill_vertices) >= 3:
-            batch = batch_for_shader(self.shader_2d, 'TRI_FAN', {"pos": fill_vertices})
+
+        # Create triangles using vertical strips
+        # For each pair of consecutive points, create two triangles forming a vertical strip
+        triangles = []
+        for i in range(len(terrain_screen) - 1):
+            x1, y1 = terrain_screen[i]
+            x2, y2 = terrain_screen[i + 1]
+
+            # Create two triangles for this vertical strip:
+            # Triangle 1: (x1,y1) -> (x2,y2) -> (x2,y_bottom)
+            triangles.extend([(x1, y1), (x2, y2), (x2, y_bottom)])
+            # Triangle 2: (x1,y1) -> (x2,y_bottom) -> (x1,y_bottom)
+            triangles.extend([(x1, y1), (x2, y_bottom), (x1, y_bottom)])
+
+        # Draw fill triangles
+        if triangles:
+            batch = batch_for_shader(self.shader_2d, 'TRIS', {"pos": triangles})
             self.shader_2d.uniform_float("color", COLORS['terrain_fill'])
             batch.draw(self.shader_2d)
-            
-            # Draw outline
-            batch = batch_for_shader(self.shader_2d, 'LINE_STRIP', {"pos": vertices})
-            self.shader_2d.uniform_float("color", COLORS['terrain_line'])
-            gpu.state.line_width_set(2.0)
-            batch.draw(self.shader_2d)
-            gpu.state.line_width_set(1.0)
+
+        # Draw terrain outline
+        batch = batch_for_shader(self.shader_2d, 'LINE_STRIP', {"pos": terrain_screen})
+        self.shader_2d.uniform_float("color", COLORS['terrain_line'])
+        gpu.state.line_width_set(2.0)
+        batch.draw(self.shader_2d)
+        gpu.state.line_width_set(1.0)
     
     def draw_alignment_profile(self, data: ProfileViewData):
         """
@@ -357,7 +401,85 @@ class ProfileViewRenderer:
         batch = batch_for_shader(self.shader_2d, 'TRI_FAN', {"pos": vertices})
         self.shader_2d.uniform_float("color", color)
         batch.draw(self.shader_2d)
-    
+
+    def draw_vertical_alignments(self, data: ProfileViewData):
+        """
+        Draw vertical alignment profiles from IFC.
+
+        This draws vertical alignments loaded from IFC files or created
+        from terrain tracing. Each vertical alignment is drawn as a green line
+        with PVI markers.
+
+        Args:
+            data: ProfileViewData with vertical alignments
+        """
+        if not data.vertical_alignments:
+            return
+
+        # Draw each vertical alignment
+        for valign_idx, valign in enumerate(data.vertical_alignments):
+            # Determine if this is the selected vertical alignment
+            is_selected = (valign_idx == data.selected_vertical_index)
+
+            # Sample points along the vertical alignment by querying at regular intervals
+            vertices = []
+
+            # Get station range from PVIs
+            if len(valign.pvis) >= 2:
+                start_station = valign.pvis[0].station
+                end_station = valign.pvis[-1].station
+
+                # Sample at regular intervals along the entire alignment
+                num_samples = 100  # More samples for smooth display
+                for i in range(num_samples):
+                    t = i / (num_samples - 1)
+                    station = start_station + t * (end_station - start_station)
+
+                    # Query elevation at this station
+                    try:
+                        elevation = valign.query_elevation_at_station(station)
+                        if elevation is not None:
+                            x, y = self.world_to_screen(station, elevation, data)
+                            vertices.append((x, y))
+                    except Exception as e:
+                        # Print error for debugging but continue
+                        print(f"[ProfileRenderer] Warning: Could not query elevation at station {station}: {e}")
+
+            # Draw vertical alignment line
+            if len(vertices) >= 2:
+                batch = batch_for_shader(self.shader_2d, 'LINE_STRIP', {"pos": vertices})
+                # Use brighter green if selected, dimmer if not
+                if is_selected:
+                    self.shader_2d.uniform_float("color", COLORS['vertical_alignment'])
+                    gpu.state.line_width_set(3.0)
+                else:
+                    color_dimmed = (0.2, 0.7, 0.3, 0.6)  # Dimmer green
+                    self.shader_2d.uniform_float("color", color_dimmed)
+                    gpu.state.line_width_set(2.0)
+                batch.draw(self.shader_2d)
+                gpu.state.line_width_set(1.0)
+                print(f"[ProfileRenderer] Drew vertical alignment with {len(vertices)} vertices")
+            else:
+                print(f"[ProfileRenderer] No vertices to draw for vertical alignment {valign.name}")
+
+            # Draw PVIs for this vertical alignment
+            if is_selected:  # Only show PVIs for selected alignment
+                for pvi in valign.pvis:
+                    x, y = self.world_to_screen(pvi.station, pvi.elevation, data)
+
+                    # Draw PVI marker (diamond shape for vertical alignment PVIs)
+                    size = 6.0
+                    diamond_vertices = [
+                        (x, y + size),      # Top
+                        (x + size, y),      # Right
+                        (x, y - size),      # Bottom
+                        (x - size, y),      # Left
+                    ]
+
+                    batch = batch_for_shader(self.shader_2d, 'TRI_FAN', {"pos": diamond_vertices})
+                    self.shader_2d.uniform_float("color", COLORS['vertical_pvi'])
+                    batch.draw(self.shader_2d)
+
     def draw_axes(self, data: ProfileViewData):
         """
         Draw X and Y axes.
@@ -395,17 +517,23 @@ class ProfileViewRenderer:
         draw_x, draw_y, draw_w, draw_h = self.get_drawable_region()
         
         # Station labels (X-axis)
+        # Note: data.station_min/max are ALREADY in station units (meters along alignment)
+        # They represent actual station values, not distances to be converted
+
         station = data.station_min
         while station <= data.station_max:
             x, y = self.world_to_screen(station, data.elevation_min, data)
-            
-            text = f"{station:.0f}m"
+
+            # Format station value directly (no conversion needed)
+            # Station values are in meters, format them in XX+XXX notation
+            text = format_station_short(station)
+
             text_width, text_height = blf.dimensions(self.font_id, text)
-            
+
             # Draw below axis
             blf.position(self.font_id, x - text_width / 2, y - 25, 0)
             blf.draw(self.font_id, text)
-            
+
             station += data.station_grid_spacing
         
         # Elevation labels (Y-axis)
@@ -423,11 +551,11 @@ class ProfileViewRenderer:
             elevation += data.elevation_grid_spacing
         
         # Axis titles
-        # X-axis title: "Station (m)"
+        # X-axis title: Always "Station" since we're working with alignment stations
         title_x = draw_x + draw_w / 2
         title_y = draw_y - 35
         blf.size(self.font_id, 12)
-        title = "Station (m)"
+        title = "Station"
         text_width, _ = blf.dimensions(self.font_id, title)
         blf.position(self.font_id, title_x - text_width / 2, title_y, 0)
         blf.draw(self.font_id, title)
@@ -455,6 +583,7 @@ class ProfileViewRenderer:
         self.draw_labels(data)
         self.draw_terrain_profile(data)
         self.draw_alignment_profile(data)
+        self.draw_vertical_alignments(data)  # Draw IFC vertical alignments
         self.draw_pvis(data)
         
         # Restore state

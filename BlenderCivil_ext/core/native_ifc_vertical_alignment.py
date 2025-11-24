@@ -980,7 +980,144 @@ class VerticalAlignment:
             # Default to 80 km/h if speed not in standards
             self.min_k_crest = MIN_K_CREST_80KPH
             self.min_k_sag = MIN_K_SAG_80KPH
-    
+
+    @classmethod
+    def from_ifc(
+        cls,
+        ifc_vertical: ifcopenshell.entity_instance,
+        design_speed: float = 80.0
+    ) -> "VerticalAlignment":
+        """Create VerticalAlignment from IFC IfcAlignmentVertical entity
+
+        Parses the semantic layer (IfcAlignmentVerticalSegment entities) to
+        reconstruct PVIs and create the vertical alignment.
+
+        Args:
+            ifc_vertical: IfcAlignmentVertical entity
+            design_speed: Design speed for K-value validation (km/h)
+
+        Returns:
+            VerticalAlignment object
+
+        Raises:
+            ValueError: If IFC entity is invalid or has no segments
+        """
+        # Get name
+        name = ifc_vertical.Name or "Vertical Alignment"
+
+        # Create alignment object
+        valign = cls(name=name, design_speed=design_speed)
+
+        # Find nested segments using IfcRelNests
+        segments = []
+        for rel in ifc_vertical.IsNestedBy or []:
+            for obj in rel.RelatedObjects:
+                if obj.is_a("IfcAlignmentSegment"):
+                    # Get the vertical segment design parameters
+                    if hasattr(obj, 'DesignParameters') and obj.DesignParameters:
+                        vert_seg = obj.DesignParameters
+                        if vert_seg.is_a("IfcAlignmentVerticalSegment"):
+                            segments.append(vert_seg)
+
+        if not segments:
+            raise ValueError(f"No vertical segments found in {name}")
+
+        # Sort segments by StartDistAlong
+        segments.sort(key=lambda s: s.StartDistAlong)
+
+        # Reconstruct PVIs from segments
+        # Strategy: Create PVIs at segment boundaries
+        valign._reconstruct_pvis_from_segments(segments)
+
+        return valign
+
+    def _reconstruct_pvis_from_segments(
+        self,
+        ifc_segments: List[ifcopenshell.entity_instance]
+    ) -> None:
+        """Reconstruct PVIs from IFC vertical segments
+
+        This method analyzes segment types and boundaries to recreate the
+        original PVI layout.
+
+        Args:
+            ifc_segments: List of IfcAlignmentVerticalSegment entities (sorted)
+        """
+        # Add first PVI at start of first segment
+        first_seg = ifc_segments[0]
+        self.add_pvi(
+            station=first_seg.StartDistAlong,
+            elevation=first_seg.StartHeight,
+            curve_length=0.0  # First PVI has no incoming curve
+        )
+
+        # Process each segment to create PVIs
+        for i, seg in enumerate(ifc_segments):
+            seg_type = seg.PredefinedType
+            start_station = seg.StartDistAlong
+            horizontal_length = seg.HorizontalLength
+            end_station = start_station + horizontal_length
+
+            if seg_type == "CONSTANTGRADIENT":
+                # Tangent segment - PVI at end with no curve
+                end_elevation = seg.StartHeight + seg.StartGradient * horizontal_length
+
+                # Only add PVI if not the last segment
+                # (last PVI will be added after loop)
+                if i < len(ifc_segments) - 1:
+                    self.add_pvi(
+                        station=end_station,
+                        elevation=end_elevation,
+                        curve_length=0.0
+                    )
+
+            elif seg_type == "PARABOLICARC":
+                # Parabolic curve segment
+                # This represents a vertical curve, so we need to create a PVI
+                # The PVI is at the midpoint of the curve with curve_length = segment length
+
+                # Calculate end elevation
+                g1 = seg.StartGradient
+                g2 = seg.EndGradient
+                A = (g2 - g1) / (2.0 * horizontal_length)
+                end_elevation = seg.StartHeight + g1 * horizontal_length + A * (horizontal_length ** 2)
+
+                # PVI is at curve midpoint
+                pvi_station = (start_station + end_station) / 2.0
+                pvi_elevation = seg.StartHeight + g1 * (horizontal_length/2.0) + A * ((horizontal_length/2.0) ** 2)
+
+                # Add PVI with curve
+                if i < len(ifc_segments) - 1:
+                    self.add_pvi(
+                        station=pvi_station,
+                        elevation=pvi_elevation,
+                        curve_length=horizontal_length  # Curve length is the segment length
+                    )
+
+        # Add final PVI at end of last segment
+        last_seg = ifc_segments[-1]
+        last_start = last_seg.StartDistAlong
+        last_length = last_seg.HorizontalLength
+        last_end_station = last_start + last_length
+
+        if last_seg.PredefinedType == "CONSTANTGRADIENT":
+            last_end_elev = last_seg.StartHeight + last_seg.StartGradient * last_length
+        elif last_seg.PredefinedType == "PARABOLICARC":
+            g1 = last_seg.StartGradient
+            g2 = last_seg.EndGradient
+            A = (g2 - g1) / (2.0 * last_length)
+            last_end_elev = last_seg.StartHeight + g1 * last_length + A * (last_length ** 2)
+        else:
+            last_end_elev = last_seg.StartHeight
+
+        self.add_pvi(
+            station=last_end_station,
+            elevation=last_end_elev,
+            curve_length=0.0  # Last PVI has no outgoing curve
+        )
+
+        print(f"[VerticalAlignment] Reconstructed {len(self.pvis)} PVIs from {len(ifc_segments)} IFC segments")
+
     # ========================================================================
     # PVI MANAGEMENT
     # ========================================================================
@@ -1597,7 +1734,78 @@ class VerticalAlignment:
             print(f"[VerticalAlignment] Created IfcGradientCurve with {len(ifc_curve_segments)} curve segments")
 
         return vertical
-    
+
+    def create_blender_empty(
+        self,
+        ifc_entity: ifcopenshell.entity_instance,
+        horizontal_alignment: Optional[ifcopenshell.entity_instance] = None
+    ):
+        """Create a lightweight Blender Empty object to represent the vertical alignment in the Outliner
+
+        Args:
+            ifc_entity: The IFC IfcAlignmentVertical entity
+            horizontal_alignment: Optional parent horizontal alignment IFC entity
+
+        Returns:
+            Blender Empty object
+        """
+        import bpy
+        from .native_ifc_manager import NativeIfcManager
+
+        print(f"\n[VerticalEmpty] Creating Empty for vertical alignment: {self.name}")
+        print(f"[VerticalEmpty] IFC entity: {ifc_entity}")
+        print(f"[VerticalEmpty] Horizontal parent: {horizontal_alignment}")
+
+        # Create Empty object
+        empty_name = f"📊 {self.name}"
+        empty = bpy.data.objects.new(empty_name, None)
+        empty.empty_display_type = 'SINGLE_ARROW'
+        empty.empty_display_size = 1.0
+        print(f"[VerticalEmpty] Created Empty object: {empty_name}")
+
+        # Link to IFC entity
+        NativeIfcManager.link_object(empty, ifc_entity)
+        print(f"[VerticalEmpty] Linked to IFC entity (GlobalId: {ifc_entity.GlobalId})")
+
+        # Add to project collection
+        project_collection = NativeIfcManager.get_project_collection()
+        print(f"[VerticalEmpty] Project collection: {project_collection}")
+        if project_collection:
+            project_collection.objects.link(empty)
+            print(f"[VerticalEmpty] Added to project collection")
+        else:
+            print(f"[VerticalEmpty] WARNING: No project collection found!")
+
+        # Parent to horizontal alignment if it exists
+        if horizontal_alignment:
+            # Find the horizontal alignment's Blender Empty object
+            # The AlignmentVisualizer stores the Empty with 'ifc_definition_id' property
+            horizontal_ifc_id = horizontal_alignment.id()
+            print(f"[VerticalEmpty] Looking for horizontal alignment with ifc_definition_id: {horizontal_ifc_id}")
+
+            found = False
+            for obj in bpy.data.objects:
+                obj_ifc_id = obj.get("ifc_definition_id")
+                obj_ifc_class = obj.get("ifc_class")
+                if obj_ifc_id == horizontal_ifc_id and obj_ifc_class == "IfcAlignment":
+                    # Found the horizontal alignment Empty - parent to it
+                    empty.parent = obj
+                    print(f"[VerticalEmpty] ✅ Parented to horizontal alignment: {obj.name}")
+                    found = True
+                    break
+
+            if not found:
+                print(f"[VerticalEmpty] ⚠️ WARNING: Could not find horizontal alignment object with ifc_definition_id {horizontal_ifc_id}")
+                print(f"[VerticalEmpty] Available alignment objects:")
+                for obj in bpy.data.objects:
+                    if "ifc_definition_id" in obj and "ifc_class" in obj:
+                        print(f"  - {obj.name}: ifc_definition_id={obj['ifc_definition_id']}, class={obj['ifc_class']}")
+        else:
+            print(f"[VerticalEmpty] No horizontal parent specified")
+
+        print(f"[VerticalEmpty] ✅ Finished creating Empty: {empty_name}\n")
+        return empty
+
     # ========================================================================
     # UTILITIES
     # ========================================================================
@@ -1716,6 +1924,126 @@ def get_minimum_k_value(design_speed: float, is_crest: bool) -> float:
 
 
 # ============================================================================
+# IFC LOADING FUNCTIONS
+# ============================================================================
+
+def load_vertical_alignments_from_ifc(
+    ifc_file: ifcopenshell.file,
+    horizontal_alignment: Optional[ifcopenshell.entity_instance] = None
+) -> List[VerticalAlignment]:
+    """Load all vertical alignments from an IFC file
+
+    If horizontal_alignment is provided, only loads vertical alignments
+    nested under that horizontal alignment. Otherwise, loads all vertical
+    alignments in the file.
+
+    Args:
+        ifc_file: IFC file instance
+        horizontal_alignment: Optional parent horizontal alignment to filter by
+
+    Returns:
+        List of VerticalAlignment objects
+
+    Example:
+        >>> ifc = ifcopenshell.open("project.ifc")
+        >>> valigns = load_vertical_alignments_from_ifc(ifc)
+        >>> print(f"Loaded {len(valigns)} vertical alignments")
+    """
+    print(f"\n[IFC Load] load_vertical_alignments_from_ifc called")
+    print(f"[IFC Load] horizontal_alignment parameter: {horizontal_alignment}")
+
+    vertical_alignments = []
+
+    if horizontal_alignment:
+        # Load only vertical alignments nested under this horizontal alignment
+        for rel in horizontal_alignment.IsNestedBy or []:
+            for obj in rel.RelatedObjects:
+                if obj.is_a("IfcAlignmentVertical"):
+                    try:
+                        valign = VerticalAlignment.from_ifc(obj)
+                        vertical_alignments.append(valign)
+                        print(f"[IFC Load] Loaded vertical alignment: {valign.name}")
+
+                        # Create Blender Empty for visualization in Outliner
+                        valign.create_blender_empty(obj, horizontal_alignment=horizontal_alignment)
+
+                    except Exception as e:
+                        print(f"[IFC Load] Warning: Failed to load vertical alignment {obj.Name}: {e}")
+    else:
+        # Load all vertical alignments in file
+        print(f"[IFC Load] Loading all vertical alignments from file...")
+        all_verticals = ifc_file.by_type("IfcAlignmentVertical")
+        print(f"[IFC Load] Found {len(all_verticals)} IfcAlignmentVertical entities")
+
+        for ifc_vertical in all_verticals:
+            try:
+                print(f"[IFC Load] Processing vertical alignment: {ifc_vertical.Name}")
+                valign = VerticalAlignment.from_ifc(ifc_vertical)
+                vertical_alignments.append(valign)
+                print(f"[IFC Load] Loaded vertical alignment: {valign.name}")
+
+                # Create Blender Empty for visualization in Outliner
+                # Try to find parent horizontal alignment
+                parent_horizontal = None
+                print(f"[IFC Load] Looking for parent horizontal alignment...")
+                for rel in ifc_vertical.Nests or []:
+                    print(f"[IFC Load]   Checking relationship: {rel}")
+                    if rel.is_a("IfcRelNests"):
+                        relating_obj = rel.RelatingObject
+                        print(f"[IFC Load]   Relating object: {relating_obj}")
+                        if relating_obj and relating_obj.is_a("IfcAlignment"):
+                            parent_horizontal = relating_obj
+                            print(f"[IFC Load]   ✅ Found parent horizontal: {parent_horizontal.Name}")
+                            break
+
+                if parent_horizontal:
+                    print(f"[IFC Load] Creating Empty with parent: {parent_horizontal.Name}")
+                else:
+                    print(f"[IFC Load] Creating Empty without parent")
+
+                valign.create_blender_empty(ifc_vertical, horizontal_alignment=parent_horizontal)
+
+            except Exception as e:
+                print(f"[IFC Load] ⚠️ ERROR: Failed to load vertical alignment {ifc_vertical.Name}: {e}")
+                import traceback
+                traceback.print_exc()
+
+    print(f"[IFC Load] Total vertical alignments loaded: {len(vertical_alignments)}")
+
+    # Add loaded vertical alignments to profile view data (if profile view exists)
+    try:
+        from .profile_view_overlay import get_profile_overlay
+        overlay = get_profile_overlay()
+
+        if overlay and vertical_alignments:
+            print(f"[IFC Load] Adding {len(vertical_alignments)} vertical alignments to profile view...")
+
+            # Clear existing vertical alignments in profile view
+            overlay.data.clear_vertical_alignments()
+
+            # Add each loaded vertical alignment to profile view
+            for valign in vertical_alignments:
+                overlay.data.add_vertical_alignment(valign)
+                print(f"[IFC Load]   Added {valign.name} to profile view")
+
+            # Auto-select first vertical alignment if available
+            if len(vertical_alignments) > 0:
+                overlay.data.select_vertical_alignment(0)
+                print(f"[IFC Load]   Selected {vertical_alignments[0].name} as active")
+
+            # Update view extents to include vertical alignment data
+            overlay.data.update_view_extents()
+
+            print(f"[IFC Load] ✅ Profile view updated with vertical alignments")
+
+    except Exception as e:
+        print(f"[IFC Load] Note: Could not add vertical alignments to profile view: {e}")
+        # Not a critical error - vertical alignments are still loaded
+
+    return vertical_alignments
+
+
+# ============================================================================
 # MODULE INFO
 # ============================================================================
 
@@ -1736,6 +2064,7 @@ __all__ = [
     "calculate_required_curve_length",
     "calculate_k_value",
     "get_minimum_k_value",
+    "load_vertical_alignments_from_ifc",
     # Constants
     "DESIGN_STANDARDS",
     "MIN_K_CREST_80KPH",

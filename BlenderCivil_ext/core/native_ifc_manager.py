@@ -309,9 +309,25 @@ class NativeIfcManager:
                 set_active_alignment(bpy.context, alignments[0])
                 print(f"   ✅ Set active alignment: {alignments[0].Name}")
 
+        # Load vertical alignments
+        from .native_ifc_vertical_alignment import load_vertical_alignments_from_ifc
+
+        try:
+            # Load all vertical alignments from the file
+            vertical_alignments = load_vertical_alignments_from_ifc(cls.file)
+
+            if vertical_alignments:
+                print(f"   ✅ Loaded {len(vertical_alignments)} vertical alignment(s)")
+
+                # TODO: Store vertical alignments for profile view display
+                # For now, they're loaded into memory and available via the IFC file
+
+        except Exception as e:
+            print(f"   ⚠️ Failed to load vertical alignments: {str(e)}")
+
         print(f"✅ Loaded IFC file: {filepath}")
         print(f"   Entities: {len(cls.file.by_type('IfcRoot'))}")
-        print(f"   Alignments: {len(alignments)}")
+        print(f"   Horizontal Alignments: {len(alignments)}")
 
         return cls.file
     
@@ -495,9 +511,25 @@ class NativeIfcManager:
         cls.site = None
         cls.road = None
 
-        # Remove Blender collections if they exist
-        if cls.project_collection and cls.project_collection.name in bpy.data.collections:
-            bpy.data.collections.remove(cls.project_collection)
+        # Remove Blender collections and objects by name (not just class references)
+        # This ensures cleanup works even if Blender was restarted
+
+        # Remove project collection and all its contents
+        if "BlenderCivil Project" in bpy.data.collections:
+            collection = bpy.data.collections["BlenderCivil Project"]
+            # Remove all objects in the collection
+            for obj in list(collection.objects):
+                bpy.data.objects.remove(obj, do_unlink=True)
+            # Unlink and remove the collection
+            bpy.context.scene.collection.children.unlink(collection)
+            bpy.data.collections.remove(collection)
+            print("  [Clear] Removed 'BlenderCivil Project' collection")
+
+        # Also clean up any orphaned hierarchy objects
+        for obj_name in ["📂 Project", "🌍 Site", "🛣️  Road", "📏 Alignments", "🌏 Geomodels"]:
+            if obj_name in bpy.data.objects:
+                bpy.data.objects.remove(bpy.data.objects[obj_name], do_unlink=True)
+                print(f"  [Clear] Removed orphaned object '{obj_name}'")
 
         cls.project_collection = None
         cls.site_collection = None

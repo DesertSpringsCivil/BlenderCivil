@@ -80,24 +80,29 @@ class ProfileViewData:
         self.terrain_points: List[ProfilePoint] = []
         self.alignment_points: List[ProfilePoint] = []
         self.pvis: List[ProfilePoint] = []
-        
+
+        # Vertical alignments loaded from IFC
+        # Each entry is a VerticalAlignment object
+        self.vertical_alignments: List = []  # List of VerticalAlignment objects
+        self.selected_vertical_index: Optional[int] = None  # Which vertical to display
+
         # View extents (in world coordinates)
         self.station_min = 0.0
         self.station_max = 1000.0
         self.elevation_min = 0.0
         self.elevation_max = 100.0
-        
+
         # Grid settings
         self.station_grid_spacing = 50.0  # meters
         self.elevation_grid_spacing = 5.0  # meters
-        
+
         # Visual toggles
         self.show_terrain = True
         self.show_alignment = True
         self.show_pvis = True
         self.show_grades = True
         self.show_grid = True
-        
+
         # Selection state
         self.selected_pvi_index: Optional[int] = None
     
@@ -106,17 +111,24 @@ class ProfileViewData:
         self.terrain_points.clear()
         self.alignment_points.clear()
         self.pvis.clear()
+        self.vertical_alignments.clear()
         self.selected_pvi_index = None
-    
+        self.selected_vertical_index = None
+
     def clear_terrain(self):
         """Clear terrain data only"""
         self.terrain_points.clear()
-    
+
     def clear_alignment(self):
         """Clear alignment data only"""
         self.alignment_points.clear()
         self.pvis.clear()
         self.selected_pvi_index = None
+
+    def clear_vertical_alignments(self):
+        """Clear vertical alignment data only"""
+        self.vertical_alignments.clear()
+        self.selected_vertical_index = None
     
     def add_terrain_point(self, station: float, elevation: float):
         """Add a single terrain point"""
@@ -211,7 +223,91 @@ class ProfileViewData:
         if self.selected_pvi_index is not None:
             return self.get_pvi(self.selected_pvi_index)
         return None
-    
+
+    # ========================================================================
+    # VERTICAL ALIGNMENT MANAGEMENT
+    # ========================================================================
+
+    def add_vertical_alignment(self, vertical_alignment) -> int:
+        """
+        Add a vertical alignment to the profile view.
+
+        Args:
+            vertical_alignment: VerticalAlignment object
+
+        Returns:
+            Index of added vertical alignment
+        """
+        self.vertical_alignments.append(vertical_alignment)
+        return len(self.vertical_alignments) - 1
+
+    def remove_vertical_alignment(self, index: int) -> bool:
+        """
+        Remove a vertical alignment by index.
+
+        Args:
+            index: Index of vertical alignment to remove
+
+        Returns:
+            True if removed, False if index invalid
+        """
+        if 0 <= index < len(self.vertical_alignments):
+            del self.vertical_alignments[index]
+            if self.selected_vertical_index == index:
+                self.selected_vertical_index = None
+            elif self.selected_vertical_index and self.selected_vertical_index > index:
+                self.selected_vertical_index -= 1
+            return True
+        return False
+
+    def get_vertical_alignment(self, index: int):
+        """
+        Get vertical alignment by index.
+
+        Args:
+            index: Index of vertical alignment
+
+        Returns:
+            VerticalAlignment object or None if index invalid
+        """
+        if 0 <= index < len(self.vertical_alignments):
+            return self.vertical_alignments[index]
+        return None
+
+    def select_vertical_alignment(self, index: int) -> bool:
+        """
+        Select a vertical alignment by index.
+
+        Args:
+            index: Index of vertical alignment to select
+
+        Returns:
+            True if selected, False if index invalid
+        """
+        if 0 <= index < len(self.vertical_alignments):
+            self.selected_vertical_index = index
+            return True
+        return False
+
+    def deselect_vertical_alignment(self):
+        """Deselect current vertical alignment"""
+        self.selected_vertical_index = None
+
+    def get_selected_vertical_alignment(self):
+        """
+        Get currently selected vertical alignment.
+
+        Returns:
+            VerticalAlignment object or None if no selection
+        """
+        if self.selected_vertical_index is not None:
+            return self.get_vertical_alignment(self.selected_vertical_index)
+        return None
+
+    # ========================================================================
+    # VIEW EXTENTS
+    # ========================================================================
+
     def update_view_extents(self, padding: float = 10.0):
         """
         Automatically calculate view extents from data.
@@ -222,11 +318,18 @@ class ProfileViewData:
         all_elevations = []
         all_stations = []
 
-        # Collect all points
+        # Collect all points from terrain, alignment, and PVIs
         for points in [self.terrain_points, self.alignment_points, self.pvis]:
             for pt in points:
                 all_stations.append(pt.station)
                 all_elevations.append(pt.elevation)
+
+        # Collect points from vertical alignments
+        for valign in self.vertical_alignments:
+            # Add PVIs from vertical alignment
+            for pvi in valign.pvis:
+                all_stations.append(pvi.station)
+                all_elevations.append(pvi.elevation)
 
         if not all_stations:
             # No data, use defaults

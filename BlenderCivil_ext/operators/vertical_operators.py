@@ -659,6 +659,18 @@ class BC_OT_TraceTerrainAsVertical(Operator):
         try:
             vertical_ifc = valign.to_ifc(ifc, horizontal_alignment=active_alignment_ifc)
 
+            # Create Blender Empty to represent vertical alignment in Outliner
+            valign.create_blender_empty(vertical_ifc, horizontal_alignment=active_alignment_ifc)
+
+            # Add vertical alignment to profile view
+            if overlay:
+                # Clear old vertical alignments and add the new one
+                overlay.data.clear_vertical_alignments()
+                overlay.data.add_vertical_alignment(valign)
+                overlay.data.select_vertical_alignment(0)  # Auto-select it
+                overlay.data.update_view_extents()
+                print(f"[Terrain Trace] Added vertical alignment to profile view")
+
             # Save IFC file
             NativeIfcManager.save_file()
 
@@ -747,6 +759,52 @@ class BC_OT_ClearVerticalAlignment(Operator):
         return context.window_manager.invoke_confirm(self, event)
 
 
+class BC_OT_SelectVerticalAlignment(Operator):
+    """Select a vertical alignment for display in profile view"""
+    bl_idname = "bc.select_vertical_alignment"
+    bl_label = "Select Vertical Alignment"
+    bl_description = "Select this vertical alignment for display in the profile viewer"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    alignment_index: bpy.props.IntProperty(
+        name="Alignment Index",
+        description="Index of vertical alignment to select",
+        default=0
+    )
+
+    def execute(self, context):
+        from ..core.profile_view_overlay import get_profile_overlay
+
+        # Get profile view overlay
+        overlay = get_profile_overlay()
+        if not overlay:
+            self.report({'ERROR'}, "Profile view not available")
+            return {'CANCELLED'}
+
+        # Select the vertical alignment
+        if overlay.data.select_vertical_alignment(self.alignment_index):
+            valign = overlay.data.get_vertical_alignment(self.alignment_index)
+            if valign:
+                self.report({'INFO'}, f"Selected vertical alignment: {valign.name}")
+
+                # Refresh the profile view
+                if overlay.enabled:
+                    overlay.refresh(context)
+
+                # Redraw the 3D view to update the overlay
+                for area in context.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+
+                return {'FINISHED'}
+            else:
+                self.report({'ERROR'}, "Failed to get vertical alignment")
+                return {'CANCELLED'}
+        else:
+            self.report({'ERROR'}, f"Invalid alignment index: {self.alignment_index}")
+            return {'CANCELLED'}
+
+
 # Registration
 classes = (
     BC_OT_AddPVI,
@@ -759,6 +817,7 @@ classes = (
     BC_OT_QueryStation,
     BC_OT_TraceTerrainAsVertical,
     BC_OT_ClearVerticalAlignment,
+    BC_OT_SelectVerticalAlignment,
 )
 
 

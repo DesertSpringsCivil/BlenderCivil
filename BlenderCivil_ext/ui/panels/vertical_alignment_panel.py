@@ -524,11 +524,91 @@ class VIEW3D_PT_bc_vertical_segments(Panel):
                 col.separator()
 
 
+class VIEW3D_PT_bc_vertical_ifc_alignments(Panel):
+    """IFC Vertical Alignments Sub-Panel"""
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'BlenderCivil'
+    bl_label = "IFC Vertical Alignments"
+    bl_parent_id = "VIEW3D_PT_bc_vertical_alignment"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+
+        # Get profile view overlay
+        from ...core.profile_view_overlay import get_profile_overlay
+        overlay = get_profile_overlay()
+
+        if not overlay:
+            layout.label(text="Profile view not available", icon='INFO')
+            return
+
+        vertical_alignments = overlay.data.vertical_alignments
+        selected_index = overlay.data.selected_vertical_index
+
+        if not vertical_alignments:
+            box = layout.box()
+            box.label(text="No vertical alignments loaded", icon='INFO')
+            box.separator()
+            col = box.column(align=True)
+            col.scale_y = 0.8
+            col.label(text="Create a vertical alignment from")
+            col.label(text="terrain data, or reload an IFC")
+            col.label(text="file with vertical alignments.")
+            return
+
+        # Show list of vertical alignments
+        box = layout.box()
+        box.label(text=f"Loaded Alignments: {len(vertical_alignments)}", icon='CURVE_DATA')
+
+        for i, valign in enumerate(vertical_alignments):
+            is_selected = (i == selected_index)
+
+            # Alignment item
+            row = box.row(align=True)
+
+            # Selection indicator
+            if is_selected:
+                row.alert = False  # Green highlight
+                icon = 'RADIOBUT_ON'
+            else:
+                icon = 'RADIOBUT_OFF'
+
+            # Create a button to select this alignment
+            op = row.operator("bc.select_vertical_alignment", text="", icon=icon)
+            op.alignment_index = i
+
+            # Alignment info
+            col = row.column()
+            col.scale_y = 0.9
+            info_row = col.row(align=True)
+            info_row.label(text=f"{valign.name}", icon='IPO_LINEAR')
+
+            # PVI count
+            sub_row = col.row(align=True)
+            sub_row.scale_y = 0.7
+            sub_row.label(text=f"  {len(valign.pvis)} PVIs")
+
+            # Highlight selected alignment
+            if is_selected:
+                box.separator(factor=0.3)
+
+        # Info about displaying in profile view
+        layout.separator()
+        info_box = layout.box()
+        info_col = info_box.column(align=True)
+        info_col.scale_y = 0.8
+        info_col.label(text="Selected alignment displays", icon='INFO')
+        info_col.label(text="in green in the profile viewer.")
+
+
 # Registration
 classes = (
     BC_UL_pvi_list,
     VIEW3D_PT_bc_vertical_alignment,
     VIEW3D_PT_bc_vertical_terrain,
+    VIEW3D_PT_bc_vertical_ifc_alignments,
     VIEW3D_PT_bc_vertical_pvi_list,
     VIEW3D_PT_bc_vertical_grade_info,
     VIEW3D_PT_bc_vertical_curve_design,
