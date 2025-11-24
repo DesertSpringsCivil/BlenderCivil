@@ -1648,17 +1648,26 @@ class VerticalAlignment:
             )
 
         # Export all segments (semantic layer)
-        ifc_segments = []
-        for segment in self.segments:
-            ifc_seg = segment.to_ifc_segment(ifc_file)
-            ifc_segments.append(ifc_seg)
+        # IFC 4.3 requires IfcAlignmentSegment containers with DesignParameters
+        ifc_alignment_segments = []
+        for i, segment in enumerate(self.segments):
+            # Create the vertical segment design parameters
+            ifc_vert_seg = segment.to_ifc_segment(ifc_file)
+
+            # Wrap in IfcAlignmentSegment container
+            ifc_alignment_seg = ifc_file.create_entity(
+                "IfcAlignmentSegment",
+                Name=f"Segment {i+1}",
+                DesignParameters=ifc_vert_seg
+            )
+            ifc_alignment_segments.append(ifc_alignment_seg)
 
         # Nest segments under vertical alignment using IfcRelNests
-        if ifc_segments:
+        if ifc_alignment_segments:
             ifc_file.create_entity(
                 "IfcRelNests",
                 RelatingObject=vertical,
-                RelatedObjects=ifc_segments
+                RelatedObjects=ifc_alignment_segments
             )
 
         # ====================================================================

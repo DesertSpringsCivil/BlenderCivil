@@ -89,7 +89,10 @@ class ProfileViewOverlay:
                 'POST_PIXEL'
             )
             self.enabled = True
-            
+
+            # Load vertical alignments if any were loaded from IFC
+            self._load_vertical_alignments_from_manager()
+
             # Force viewport redraw
             if context.area:
                 context.area.tag_redraw()
@@ -181,6 +184,40 @@ class ProfileViewOverlay:
                    f"{len(self.data.terrain_points)} terrain pts"
         else:
             return "DISABLED"
+
+    def _load_vertical_alignments_from_manager(self):
+        """
+        Load vertical alignments from NativeIfcManager into profile view.
+
+        This is called when the profile view is enabled, to check if
+        any vertical alignments were loaded from an IFC file.
+        """
+        try:
+            from .native_ifc_manager import NativeIfcManager
+
+            if NativeIfcManager.vertical_alignments:
+                print(f"[ProfileView] Loading {len(NativeIfcManager.vertical_alignments)} vertical alignments from IFC...")
+
+                # Clear existing vertical alignments
+                self.data.clear_vertical_alignments()
+
+                # Add each vertical alignment
+                for valign in NativeIfcManager.vertical_alignments:
+                    self.data.add_vertical_alignment(valign)
+                    print(f"[ProfileView]   Added {valign.name}")
+
+                # Auto-select first vertical alignment
+                if len(NativeIfcManager.vertical_alignments) > 0:
+                    self.data.select_vertical_alignment(0)
+                    print(f"[ProfileView]   Selected {NativeIfcManager.vertical_alignments[0].name} as active")
+
+                # Update view extents
+                self.data.update_view_extents()
+
+                print(f"[ProfileView] ✅ Loaded vertical alignments into profile view")
+
+        except Exception as e:
+            print(f"[ProfileView] Note: Could not load vertical alignments: {e}")
 
     def is_mouse_over_resize_border(self, context, mouse_x: int, mouse_y: int) -> bool:
         """

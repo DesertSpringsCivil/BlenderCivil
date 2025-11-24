@@ -58,6 +58,9 @@ class NativeIfcManager:
     road_collection = None
     alignments_collection = None
     geomodels_collection = None
+
+    # Loaded vertical alignments (for profile view integration)
+    vertical_alignments = []
     
     @classmethod
     def new_file(cls, schema="IFC4X3"):
@@ -314,23 +317,69 @@ class NativeIfcManager:
 
         try:
             # Load all vertical alignments from the file
-            vertical_alignments = load_vertical_alignments_from_ifc(cls.file)
+            cls.vertical_alignments = load_vertical_alignments_from_ifc(cls.file)
 
-            if vertical_alignments:
-                print(f"   ✅ Loaded {len(vertical_alignments)} vertical alignment(s)")
+            if cls.vertical_alignments:
+                print(f"   ✅ Loaded {len(cls.vertical_alignments)} vertical alignment(s)")
 
-                # TODO: Store vertical alignments for profile view display
-                # For now, they're loaded into memory and available via the IFC file
+                # Add vertical alignments to profile view if it's open
+                # If not open, they'll be loaded when the profile view is opened
+                cls._integrate_vertical_alignments_with_profile_view()
 
         except Exception as e:
             print(f"   ⚠️ Failed to load vertical alignments: {str(e)}")
+            cls.vertical_alignments = []
 
         print(f"✅ Loaded IFC file: {filepath}")
         print(f"   Entities: {len(cls.file.by_type('IfcRoot'))}")
         print(f"   Horizontal Alignments: {len(alignments)}")
 
         return cls.file
-    
+
+    @classmethod
+    def _integrate_vertical_alignments_with_profile_view(cls):
+        """
+        Add loaded vertical alignments to the profile view.
+
+        This is called after loading vertical alignments from IFC.
+        If the profile view is open, adds them immediately.
+        If not, they'll be added when the profile view is opened.
+        """
+        if not cls.vertical_alignments:
+            return
+
+        try:
+            from .profile_view_overlay import get_profile_overlay
+
+            overlay = get_profile_overlay()
+            if overlay:
+                # Profile view is open - add vertical alignments
+                print(f"   [ProfileView] Adding {len(cls.vertical_alignments)} vertical alignments to profile view...")
+
+                # Clear existing vertical alignments in profile view
+                overlay.data.clear_vertical_alignments()
+
+                # Add each loaded vertical alignment
+                for valign in cls.vertical_alignments:
+                    overlay.data.add_vertical_alignment(valign)
+                    print(f"   [ProfileView]   Added {valign.name}")
+
+                # Auto-select first vertical alignment
+                if len(cls.vertical_alignments) > 0:
+                    overlay.data.select_vertical_alignment(0)
+                    print(f"   [ProfileView]   Selected {cls.vertical_alignments[0].name} as active")
+
+                # Update view extents
+                overlay.data.update_view_extents()
+
+                print(f"   [ProfileView] ✅ Profile view updated with vertical alignments")
+            else:
+                # Profile view not open yet - vertical alignments stored for later
+                print(f"   [ProfileView] Profile view not open - vertical alignments will load when opened")
+
+        except Exception as e:
+            print(f"   [ProfileView] Note: Could not integrate with profile view: {e}")
+
     @classmethod
     def save_file(cls, filepath=None):
         """
@@ -510,6 +559,7 @@ class NativeIfcManager:
         cls.project = None
         cls.site = None
         cls.road = None
+        cls.vertical_alignments = []
 
         # Remove Blender collections and objects by name (not just class references)
         # This ensures cleanup works even if Blender was restarted

@@ -437,7 +437,7 @@ class ProfileViewRenderer:
 
                     # Query elevation at this station
                     try:
-                        elevation = valign.query_elevation_at_station(station)
+                        elevation = valign.get_elevation(station)
                         if elevation is not None:
                             x, y = self.world_to_screen(station, elevation, data)
                             vertices.append((x, y))
